@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>DISPATCH OS / 模拟恐怖样片</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden}
+  body{display:flex;align-items:center;justify-content:center}
+  canvas{width:540px;height:960px;display:block;image-rendering:auto}
+</style>
+</head>
+<body>
+<canvas id="c" width="540" height="960"></canvas>
+<script>
+const c = document.getElementById('c');
+const ctx = c.getContext('2d', {alpha:false});
+const W = 540, H = 960;
+let CAPTURE = new URLSearchParams(location.search).has('capture');
+
+const C = {
+  bg:'#04090a', panel:'#081416', line:'#1d3d3a',
+  dim:'#4d726d', text:'#9ad5c6', bright:'#d8fff2',
+  amber:'#e3b95c', red:'#ff4d4d', green:'#66e39a', blue:'#6fd3ff'
+};
+
+function clamp(x,a,b){return Math.max(a,Math.min(b,x));}
+function seg(t,a,b){return clamp((t-a)/(b-a),0,1);}
+function ease(p){return p<0.5?2*p*p:1-Math.pow(-2*p+2,2)/2;}
+function blink(t,period=1){return (t%period)<period/2;}
+function rng(seed){let s=seed>>>0;return ()=>((s=(s*1664525+1013904223)>>>0)/4294967296);}
+
+function box(x,y,w,h,fill,stroke,r=4,lw=1){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);
+  ctx.closePath();
+  if(fill){ctx.fillStyle=fill;ctx.fill();}
+  if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=lw;ctx.stroke();}
+}
+function txt(s,x,y,size=16,color=C.text,align='left',weight='400',font='mono'){
+  ctx.save();
+  const fam = font==='mono' ? '"Consolas","Courier New","Microsoft YaHei",monospace' : '"Microsoft YaHei","PingFang SC",sans-serif';
+  ctx.font = weight+' '+size+'px '+fam;
+  ctx.fillStyle=color;ctx.textAlign=align;ctx.textBaseline='alphabetic';
+  ctx.fillText(s,x,y);ctx.restore();
+}
+function line(x1,y1,x2,y2,color,lw=1){
+  ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);
+  ctx.strokeStyle=color;ctx.lineWidth=lw;ctx.stroke();
+}
+function header(t){
+  txt('CITY OPS  /  DISPATCH TERMINAL',28,44,14,C.dim,'left','700');
+  txt('v9.4',512,44,13,C.dim,'right');
+  line(28,58,512,58,C.line);
+  const sec = String(3+Math.floor(t)%58).padStart(2,'0');
+  txt('02/10   21:00:'+sec,512,82,14,C.text,'right','700');
+  txt('● LIVE',28,82,13,C.red,'left','700');
+}
+function footer(s){
+  line(28,914,512,914,C.line);
+  txt(s,28,940,12,C.dim);
+  txt('SIMULATED HORROR // INTERNAL',512,940,11,C.dim,'right');
+}
+function scanlines(seed){
+  ctx.save();ctx.globalAlpha=.16;ctx.fillStyle='#000';
+  for(let y=0;y<H;y+=3)ctx.fillRect(0,y,W,1);
+  ctx.restore();
+  const r=rng(seed);
+  ctx.save();ctx.globalAlpha=.05;
+  for(let i=0;i<90;i++){ctx.fillStyle=r()>.5?'#9ff':'#000';ctx.fillRect(r()*W,r()*H,1+r()*70,1);}
+  ctx.restore();
+  const g=ctx.createRadialGradient(W/2,H/2,H*.25,W/2,H/2,H*.78);
+  g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(0,0,0,.72)');
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+}
+function glitch(t,strength){
+  if(strength<=0)return;
+  const r=rng(Math.floor(t*60)*91+7);
+  const n=Math.floor(strength*8);
+  for(let i=0;i<n;i++){
+    const y=r()*H, h=2+r()*14, dx=(r()-.5)*40*strength;
+    try{ctx.drawImage(c,0,y,W,h,dx,y,W,h);}catch(e){}
+  }
+  ctx.save();ctx.globalAlpha=.12*strength;
+  ctx.fillStyle='#0ff';ctx.fillRect(0,0,W,H);ctx.restore();
+}
+
+/* ---------- scene 1: boot ---------- */
+function boot(t){
+  txt('系统启动中  /  BOOT SEQUENCE',W/2,150,15,C.amber,'center','700');
+  box(28,180,484,250,C.panel,C.line,6);
+  const items=[
+    ['连接调度中心 .......... OK',.3],
+    ['加载城市路网 v9.4 ..... OK',.8],
+    ['同步骑手状态 .......... OK',1.3],
+    ['校准监控通道 17 ....... OK',1.8]
+  ];
+  items.forEach(([s,at],i)=>{
+    if(t>=at){
+      const a=clamp((t-at)/.25,0,1);
+      ctx.save();ctx.globalAlpha=a;
+      txt(s,52,232+i*46,17,i===3?C.amber:C.text,'left','400');
+      ctx.restore();
+    }
+  });
+  const p=clamp(t/2.6,0,1);
+  txt('初始化进度  '+Math.floor(p*100)+'%',28,478,14,C.dim);
+  box(28,492,484,10,'#0a1a19',C.line,2);
+  ctx.fillStyle=C.amber;ctx.fillRect(30,494,480*p,6);
+  if(blink(t,.8))txt('_',512,478,18,C.amber,'right','700');
+  txt('警告：本系统仅用于城市运力调度',W/2,600,13,C.dim,'center');
+  txt('请勿将界面内容用于其他用途',W/2,626,13,C.dim,'center');
+}
+
+/* ---------- scene 2: order card ---------- */
+function order(t){
+  txt('新订单  /  NEW ORDER',28,132,17,C.amber,'left','700');
+  if(blink(t,.7)){ctx.fillStyle=C.amber;ctx.fillRect(218,119,10,16);}
+  const y0=160, x=28, w=484;
+  box(x,y0,w,320,C.panel,C.amber,6,1.4);
+  txt('#770537',x+20,y0+38,26,C.bright,'left','700','mono');
+  txt('派单时间  21:04:12',x+w-20,y0+36,14,C.dim,'right');
+  line(x+20,y0+56,x+w-20,y0+56,C.line);
+  txt('取餐点',x+20,y0+94,13,C.dim);
+  txt('老街 17 号  ·  街角便利店',x+20,y0+126,20,C.text,'left','500','sans');
+  txt('送达点',x+20,y0+172,13,C.dim);
+  txt('滨江公寓 B 座  ·  3 单元 802',x+20,y0+204,20,C.text,'left','500','sans');
+  line(x+20,y0+230,x+w-20,y0+230,C.line);
+  txt('骑手',x+20,y0+268,13,C.dim);
+  txt('U-0427',x+96,y0+270,19,C.amber,'left','700');
+  txt('预计送达  21:18',x+w-20,y0+268,14,C.text,'right');
+  const accepted=t>4.5;
+  box(x+20,y0+286,180,26,accepted?'#123024':'#2a2410',accepted?C.green:C.amber,3);
+  txt(accepted?'✓ 已接单':'确认接单',x+110,y0+305,14,accepted?C.green:C.amber,'center','700');
+  // mini map
+  box(28,510,484,260,C.panel,C.line,6);
+  txt('路线预览 / ROUTE',48,542,13,C.dim);
+  const r=rng(42);
+  ctx.save();
+  ctx.beginPath();ctx.rect(48,558,444,194);ctx.clip();
+  for(let i=0;i<9;i++)line(48,558+i*24,492,558+i*24,'#102b29');
+  for(let i=0;i<17;i++)line(48+i*28,558,48+i*28,752,'#102b29');
+  ctx.setLineDash([6,6]);
+  ctx.beginPath();ctx.moveTo(100,700);ctx.lineTo(220,700);ctx.lineTo(220,620);ctx.lineTo(390,620);
+  ctx.strokeStyle=C.amber;ctx.lineWidth=2;ctx.stroke();ctx.setLineDash([]);
+  ctx.fillStyle=C.amber;ctx.fillRect(94,694,12,12);
+  ctx.fillStyle=C.green;ctx.beginPath();ctx.arc(390,620,7,0,7);ctx.fill();
+  txt('取',100,684,12,C.amber,'center');
+  txt('送',390,610,12,C.green,'center');
+  ctx.restore();
+}
+
+/* ---------- scene 3: rider status ---------- */
+function rider(t){
+  txt('骑手实时状态  /  RIDER U-0427',28,132,17,C.amber,'left','700');
+  box(28,160,230,300,C.panel,C.line,6);
+  txt('当前状态',48,200,13,C.dim);
+  const still=t>7.4;
+  txt(still?'静止':'行驶中',48,236,24,still?C.red:C.green,'left','700','sans');
+  txt('速度',48,286,13,C.dim);
+  txt(still?'0 km/h':'28 km/h',48,318,20,still?C.red:C.text);
+  txt('心率',48,364,13,C.dim);
+  const hr = t<6.8?72:t<7.3?Math.floor(72+(t-6.8)*220):t<7.8?Math.floor(118-(t-7.3)*80):0;
+  txt(String(hr)+' BPM',48,398,22,hr>100?C.red:C.text,'left','700');
+  txt('最后定位',48,438,13,C.dim);
+  txt('21:06:41  老街口',48,464,14,C.text);
+  // comms
+  box(274,160,238,300,C.panel,C.line,6);
+  txt('通讯记录 / COMMS',294,200,13,C.dim);
+  const logs=[
+    ['21:04','已接单',C.text],
+    ['21:05','呼叫骑手...',C.dim],
+    ['21:06','无人接听',C.amber],
+    ['21:07','发送短信',C.text],
+    ['21:08','消息已读',C.amber]
+  ];
+  logs.forEach((l,i)=>{
+    if(t>6.3+i*.5){txt(l[0],294,240+i*38,13,C.dim);txt(l[1],294,258+i*38,15,l[2],'left','400','sans');}
+  });
+  if(t>8.4){ctx.save();ctx.globalAlpha=blink(t,.5)?1:.25;txt('● 信号中断',294,432,15,C.red,'left','700','sans');ctx.restore();}
+  // waveform
+  box(28,490,484,280,C.panel,C.line,6);
+  txt('语音通道 / CH-17',48,524,13,C.dim);
+  const r=rng(777);
+  ctx.strokeStyle=t>8.4?C.red:C.dim;ctx.lineWidth=2;ctx.beginPath();
+  for(let x=48;x<=492;x+=3){
+    const amp=t>8.4?2:18+Math.sin(x*.08+t*8)*10+r()*8;
+    const y=620+Math.sin(x*.05+t*6)*amp;
+    x===48?ctx.moveTo(x,y):ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+  if(t>8.4)txt('通道无音频输入',270,620,17,C.red,'center','700','sans');
+}
+
+/* ---------- scene 4: CCTV ---------- */
+function cctv(t){
+  txt('监控通道 17  /  CAM-17',28,132,17,C.amber,'left','700');
+  const fx=28,fy=160,fw=484,fh=420;
+  ctx.fillStyle='#020607';ctx.fillRect(fx,fy,fw,fh);
+  const r=rng(Math.floor(t*30)+91);
+  for(let i=0;i<1100;i++){
+    const a=.02+r()*.10;
+    ctx.fillStyle=r()>.5?'rgba(160,220,210,'+a+')':'rgba(0,0,0,'+a+')';
+    ctx.fillRect(fx+r()*fw,fy+r()*fh,1+r()*3,1+r()*2);
+  }
+  // street perspective
+  ctx.strokeStyle='rgba(120,190,175,.12)';ctx.lineWidth=1;
+  for(let i=0;i<7;i++){line(fx+40,fy+fh-i*38,fx+fw-40,fy+fh-i*38,'rgba(120,190,175,.10)');}
+  line(fx+242,fy,fx+242,fy+fh,'rgba(120,190,175,.10)');
+  // shambling figure
+  const px=fx+150+seg(t,9,12)*190;
+  const sway=Math.sin(t*4)*10;
+  ctx.fillStyle='rgba(2,10,9,.95)';
+  ctx.beginPath();ctx.ellipse(px,fy+170+sway*.2,22,30,0,0,7);ctx.fill();
+  ctx.fillRect(px-20,fy+198+sway*.2,40,120);
+  ctx.fillRect(px-34,fy+210+sway*.4,12,90);
+  ctx.fillRect(px+22,fy+205-sway*.4,12,96);
+  ctx.fillRect(px-18,fy+316,14,70);ctx.fillRect(px+5,fy+316,14,70);
+  // red detection box
+  if(t>10.3){
+    ctx.save();ctx.setLineDash([5,4]);ctx.strokeStyle=C.red;ctx.lineWidth=2;
+    ctx.strokeRect(px-48,fy+132,96,270);ctx.restore();
+    txt('非登记目标',px-48,fy+124,13,C.red,'left','700','sans');
+    txt('行为异常',px+48,fy+124,13,C.red,'right','700','sans');
+  }
+  txt('CAM-17  老街口  02/10 21:09:'+String(12+Math.floor(seg(t,9,12)*40)).padStart(2,'0'),fx+14,fy+26,13,C.text,'left','700');
+  txt('REC',fx+fw-14,fy+26,13,C.red,'right','700');
+  if(blink(t,1)){ctx.fillStyle=C.red;ctx.beginPath();ctx.arc(fx+fw-76,fy+22,5,0,7);ctx.fill();}
+  box(28,604,484,270,C.panel,C.line,6);
+  txt('事件日志 / EVENT LOG',48,638,13,C.dim);
+  const ev=[
+    ['21:09:12','检测到未登记移动目标',C.amber],
+    ['21:09:20','目标移动速度 0.3 m/s',C.text],
+    ['21:09:31','目标未响应身份询问',C.amber],
+    ['21:09:44','目标持续接近配送路线',C.red]
+  ];
+  ev.forEach((e,i)=>{
+    if(t>9.4+i*.6){txt(e[0],48,674+i*44,13,C.dim);txt(e[1],154,674+i*44,15,e[2],'left','400','sans');}
+  });
+}
+
+/* ---------- scene 5: logs ---------- */
+function logs(t){
+  txt('系统日志  /  SYSTEM LOG',28,132,17,C.amber,'left','700');
+  box(28,160,484,430,C.panel,C.line,6);
+  const rows=[
+    ['21:10:02','订单 #770537  骑手已取餐',C.text],
+    ['21:10:41','骑手偏离规划路线 380m',C.amber],
+    ['21:11:15','骑手进入封锁区域',C.amber],
+    ['21:11:52','骑手心率信号丢失',C.red],
+    ['21:12:03','客户已确认收货',C.green],
+    ['21:12:07','客户状态：未接听',C.red]
+  ];
+  rows.forEach((r,i)=>{
+    if(t>12.2+i*.42){
+      const a=clamp((t-12.2-i*.42)/.25,0,1);
+      ctx.save();ctx.globalAlpha=a;
+      txt(r[0],48,210+i*60,13,C.dim);
+      txt(r[1],48,234+i*60,17,r[2],'left','400','sans');
+      if(i===5&&blink(t,.6)){ctx.fillStyle=C.red;ctx.fillRect(48,240+i*60,300,2);}
+      ctx.restore();
+    }
+  });
+  box(28,616,484,160,'#1b0d0d',C.red,6,1.4);
+  txt('⚠  异常事件  ABNORMAL EVENT',48,656,16,C.red,'left','700','sans');
+  txt('订单 #770537 已超过预计送达时间',48,692,15,C.text,'left','400','sans');
+  txt('系统无法联系骑手 U-0427',48,720,15,C.text,'left','400','sans');
+  txt('自动补偿流程已启动',48,748,15,C.dim,'left','400','sans');
+}
+
+/* ---------- scene 6: re-dispatch ---------- */
+function redispatch(t){
+  ctx.save();ctx.globalAlpha=clamp((t-15)/.3,0,1);
+  txt('订单异常关闭',W/2,150,34,C.red,'center','700','sans');
+  txt('ORDER #770537  CLOSED',W/2,182,14,C.dim,'center');
+  // spinner
+  const a=t*5;
+  ctx.beginPath();ctx.arc(W/2,240,26,0,7);ctx.strokeStyle='#17302c';ctx.lineWidth=4;ctx.stroke();
+  ctx.beginPath();ctx.arc(W/2,240,26,a,a+1.8);ctx.strokeStyle=C.amber;ctx.lineWidth=4;ctx.stroke();
+  txt('正在重新派单...',W/2,308,16,C.amber,'center','400','sans');
+  if(t>15.8){
+    box(28,350,484,340,C.panel,C.amber,6,1.4);
+    txt('新订单  /  NEW ORDER',48,390,15,C.amber,'left','700');
+    txt('#770538',48,440,28,C.bright,'left','700');
+    line(48,460,492,460,C.line);
+    txt('取餐点',48,498,13,C.dim);
+    txt('老街 17 号  ·  街角便利店',48,528,19,C.text,'left','400','sans');
+    txt('送达点',48,576,13,C.dim);
+    txt('骑手 U-0427 的登记住址',48,606,20,C.red,'left','700','sans');
+    line(48,628,492,628,C.line);
+    txt('备注：请勿与收件人对话',48,664,15,C.amber,'left','400','sans');
+    txt('派单时间  02/10  21:13:00',48,684,13,C.dim);
+  }
+  ctx.restore();
+}
+
+/* ---------- scene 7: ending ---------- */
+function ending(t){
+  ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);
+  const a=clamp((t-18)/.45,0,1)*clamp((19.75-t)/.25,0,1);
+  ctx.save();ctx.globalAlpha=a;
+  glitch(t, .35*clamp((18.6-t)/.4,0,1)+.2*clamp((t-19.4)/.3,0,1));
+  const r=rng(Math.floor(t*50)+3);
+  txt('人都变了，系统还在派单。',W/2,470,27,'#ffffff','center','700','sans');
+  ctx.restore();
+  ctx.save();ctx.globalAlpha=a*.8;
+  txt('02/10   21:13   ·   LIVE',W/2,520,13,C.red,'center','700');
+  ctx.restore();
+}
+
+function draw(t){
+  t=clamp(t,0,19.98);
+  ctx.fillStyle=C.bg;ctx.fillRect(0,0,W,H);
+  // subtle frame
+  ctx.strokeStyle='#0d2422';ctx.lineWidth=1;ctx.strokeRect(12,12,W-24,H-24);
+  header(t);
+  if(t<3){boot(t);}
+  else if(t<6){order(t);}
+  else if(t<9){rider(t);}
+  else if(t<12){cctv(t);}
+  else if(t<15){logs(t);}
+  else if(t<18){redispatch(t);}
+  else{ending(t);}
+  if(t<18)footer('调度中心 / 自动派单系统 · 未经授权不得访问');
+  scanlines(Math.floor(t*20)+1);
+  const g = t>=18?0:t<6?0:t<9?.15:t<12?.35:t<15?.35:.7;
+  glitch(t,g*(blink(t,.37)?1:.12));
+}
+
+window.seek = function(t){draw(t);};
+window.__ready = true;
+
+if(!CAPTURE){
+  let t0=performance.now();
+  (function loop(now){
+    const t=((now-t0)/1000)%20;
+    draw(t);
+    requestAnimationFrame(loop);
+  })(t0);
+}
+</script>
+</body>
+</html>

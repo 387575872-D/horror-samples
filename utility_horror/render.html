@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>用水异常 / 城南智慧物业</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden}
+  body{display:flex;align-items:center;justify-content:center}
+  canvas{width:540px;height:960px;display:block}
+</style>
+</head>
+<body>
+<canvas id="c" width="540" height="960"></canvas>
+<script src="photos.js"></script>
+<script>
+const c=document.getElementById('c');
+const ctx=c.getContext('2d',{alpha:false});
+const W=540,H=960;
+const CAPTURE=new URLSearchParams(location.search).has('capture');
+
+const UA={
+  brand:'#3A7BFF', chatbg:'#EDEDED', mine:'#95EC69', other:'#FFFFFF',
+  ink:'#111', sys:'#9aa3ad', page:'#F2F5F9', line:'#E3E9EF',
+  red:'#FA5151', green:'#07C160', orange:'#FF9C07', dim:'#7d8894'
+};
+const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+const ease=p=>p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
+const blink=(t,p=1)=>(t%p)<p/2;
+function rng(seed){let s=seed>>>0;return ()=>((s=(s*1664525+1013904223)>>>0)/4294967296);}
+
+const IMGS={};let imgLoaded=0,imgNeed=0;
+if(window.PHOTOS){for(const k in PHOTOS){imgNeed++;const im=new Image();im.onload=()=>{imgLoaded++;};im.src=PHOTOS[k];IMGS[k]=im;}}
+function img(k){const im=IMGS[k];return (im&&im.complete&&im.naturalWidth)?im:null;}
+
+function txt(s,x,y,size=16,color='#111',align='left',weight='400',font='sans'){
+  ctx.save();
+  const fam=font==='sans'?'"Microsoft YaHei","PingFang SC",sans-serif':'"Consolas","Courier New","Microsoft YaHei",monospace';
+  ctx.font=weight+' '+size+'px '+fam;
+  ctx.fillStyle=color;ctx.textAlign=align;ctx.textBaseline='alphabetic';
+  ctx.fillText(s,x,y);ctx.restore();
+}
+function rrect(x,y,w,h,r,fill,stroke){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();
+  if(fill){ctx.fillStyle=fill;ctx.fill();}
+  if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1;ctx.stroke();}
+}
+function line2(x1,y1,x2,y2,color='#E3E9EF',lw=1){
+  ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.strokeStyle=color;ctx.lineWidth=lw;ctx.stroke();
+}
+function imgCover(k,x,y,w,h,r=8,tag){
+  const im=img(k);
+  rrect(x,y,w,h,r,'#101418');
+  if(im){
+    const iw=im.naturalWidth,ih=im.naturalHeight;
+    const s=Math.max(w/iw,h/ih),dw=iw*s,dh=ih*s;
+    ctx.save();rrect(x,y,w,h,r);ctx.clip();
+    ctx.drawImage(im,x+(w-dw)/2,y+(h-dh)/2,dw,dh);ctx.restore();
+  }
+  if(tag){rrect(x+10,y+h-30,tag.w,22,4,'rgba(0,0,0,.62)');txt(tag.s,x+10+tag.w/2,y+h-14,12,'#fff','center','500');}
+}
+function drawAvatarBox(x,y,s,color,label){
+  rrect(x,y,s,s,6,color);
+  txt(label,x+s/2,y+s/2+s*0.32,Math.floor(s*0.5),'#fff','center','700','sans');
+}
+function statusBar(t){
+  txt('23:47',24,24,15,'#111','left','600');
+  for(let i=0;i<4;i++){ctx.fillStyle=i<3?'#111':'#C7C7C7';ctx.fillRect(440+i*7,26-i*2,4,4+i*2);}
+  txt('5G',472,24,11,'#111','left','600');
+  rrect(494,14,26,12,2,null,'#111');
+  ctx.fillStyle='#111';ctx.fillRect(496,16,20,8);
+  ctx.fillStyle='#111';ctx.fillRect(521,17,3,6);
+}
+function appChrome(title){
+  ctx.fillStyle='#FFFFFF';ctx.fillRect(0,0,W,104);
+  line2(0,104,W,104,UA.line);
+  rrect(24,52,40,40,8,UA.brand);
+  txt('城',44,80,24,'#fff','center','700','sans');
+  txt(title,76,80,19,'#111','left','600');
+  txt('🔔',512,80,20,'#666','right');
+  statusBar();
+}
+function tabbar(active){
+  ctx.fillStyle='#FFFFFF';ctx.fillRect(0,H-64,W,64);
+  line2(0,H-64,W,H-64,UA.line);
+  const items=['首页','报修','缴费','我的'];
+  items.forEach((s,i)=>{
+    const x=67+i*135;
+    txt(s,x,H-30,13,active===i?UA.brand:UA.dim,'center','600');
+    ctx.fillStyle=active===i?UA.brand:'#D6DDE4';
+    rrect(x-9,H-52,18,4,2,ctx.fillStyle);
+  });
+}
+
+/* ============ 通知横幅 ============ */
+function notifCard(y,t,title,body,appName,color){
+  const a=clamp(t/0.3,0,1);
+  ctx.save();ctx.globalAlpha=a;
+  const yy=y+(1-ease(a))*-40;
+  rrect(14,yy,512,96,14,'rgba(250,250,250,.97)','rgba(0,0,0,.08)');
+  rrect(28,yy+20,54,54,12,color);
+  txt(appName[0],28+27,yy+20+36,26,'#fff','center','700','sans');
+  txt(appName,96,yy+28,13,'#8a919a','left','600');
+  txt(title,96,yy+50,15,'#111','left','600');
+  const lines=body.length>24?[body.slice(0,24),body.slice(24,48)]:[body];
+  lines.forEach((l,i)=>txt(l,96,yy+70+i*18,12,'#5b6470'));
+  txt('现在',500,yy+26,11,'#a5adb5','right');
+  ctx.restore();
+}
+
+/* ============ P1 锁屏 ============ */
+function pageLock(){
+  const g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#0B1220');g.addColorStop(.55,'#101B2C');g.addColorStop(1,'#0A0F16');
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  const r=rng(88);ctx.save();ctx.globalAlpha=.5;
+  for(let i=0;i<60;i++){ctx.fillStyle='#31435c';ctx.beginPath();ctx.arc(r()*W,r()*H,r()*1.6,0,7);ctx.fill();}
+  ctx.restore();
+  txt('23:47',W/2,190,64,'#E8EEF6','center','200');
+  txt('11月18日 星期三',W/2,232,16,'#8fa0b5','center','500');
+  notifCard(320,tGlobal-0.9,'用水异常提醒','您名下幸福路7号本周用水18吨，折合4口人家用','城南智慧物业',UA.brand);
+  notifCard(430,tGlobal-2.3,'工单通知','抄表员已到达幸福路7号，客户未应答','城南智慧物业',UA.brand);
+  ctx.save();ctx.globalAlpha=.5+0.3*Math.sin(tGlobal*2.2);
+  txt('上滑解锁',W/2,880,14,'#7183a0','center','500');ctx.restore();
+}
+
+/* ============ P2 房产页 ============ */
+function pageHome(){
+  ctx.fillStyle=UA.page;ctx.fillRect(0,0,W,H);
+  appChrome('城南智慧物业');
+  // 房产卡
+  rrect(24,122,492,190,12,'#FFF');
+  imgCover('house',40,138,170,120,8);
+  txt('幸福路 7 号',226,162,19,'#111','left','700');
+  txt('自建房 ·登记人：陈建国',226,188,13,UA.dim);
+  rrect(226,202,64,24,4,'#EEF1F5');txt('空置',258,219,12,UA.dim,'center','600');
+  rrect(298,202,88,24,4,'#FDECEC');txt('用水异常',342,219,12,UA.red,'center','600');
+  txt('上次抄表：2025-09',226,246,12,'#a5adb5');
+  txt('水表编号：SB-0417',226,268,12,'#a5adb5');
+  line2(40,278,500,278,UA.line);
+  txt('户号 3307-0217 · 阶梯水价',40,298,12,UA.dim);
+  // 用水卡
+  rrect(24,330,492,220,12,'#FFF');
+  txt('本周用水量（吨）',44,362,13,UA.dim,'left','600');
+  txt('18',44,438,66,'#111','left','700');
+  txt('吨',140,438,20,UA.dim,'left','700');
+  rrect(170,388,150,26,4,'#FDECEC');
+  txt('≈ 4 口之家 · 超标 893%',245,406,12,UA.red,'center','600');
+  // 柱状图
+  const vals=[0.2,0.3,0.4,2,6,14,18],days=['一','二','三','四','五','六','日'];
+  const bx=250,by=430,bw=250,bh=84;
+  line2(bx-6,by+14,bx+bw,by+14,'#E7ECF1');
+  vals.forEach((v,i)=>{
+    const x=bx+i*36,h=clamp(v/18,0,1)*bh;
+    ctx.fillStyle=i>=4?UA.red:'#9DB4E8';
+    rrect(x,by+12-h,20,h,3,ctx.fillStyle);
+    txt(days[i],x+10,by+30,11,UA.dim,'center');
+  });
+  // 警示条
+  rrect(24,572,492,52,10,'#FFF7E8');
+  txt('⚠',44,606,18,UA.orange,'left','700');
+  txt('检测到连续用水 · 已持续 6 天',76,606,15,'#8a5b00','left','600','sans');
+  txt('查看详情 ›',492,606,13,UA.orange,'right');
+  tabbar(0);
+}
+
+/* ============ P3 工单流 ============ */
+const TICKETS=[
+  {at:10.8,img:'meter',tag:{s:'读数异常',w:76},tc:UA.red,title:'抄表记录 · 11月12日',sub:'表底数 0417 → 0471 · 半小时内 +54 吨'},
+  {at:13.4,img:'selfie',tag:{s:'判定：正常',w:88},tc:'#8a919a',title:'上门打卡 · 11月14日',sub:'客户未应答，已拍照留档 · 拍摄人：刘伟'},
+  {at:16.0,text:true,title:'复核工单 GD-1121 已派发',sub:'预计 30 分钟内上门 · 请保持电话畅通'}
+];
+function pageTickets(){
+  ctx.fillStyle=UA.page;ctx.fillRect(0,0,W,H);
+  appChrome('工单记录');
+  let y=124;
+  for(const tk of TICKETS){
+    const a=clamp((tGlobal-tk.at)/0.3,0,1);
+    if(a<=0){continue;}
+    ctx.save();ctx.globalAlpha=a;
+    const yy=y+(1-ease(a))*24;
+    const h=tk.text?110:330;
+    rrect(24,yy,492,h,12,'#FFF');
+    if(tk.text){
+      ctx.fillStyle=UA.green;ctx.fillRect(24,yy,4,h);
+      txt(tk.title,44,yy+38,16,'#111','left','700');
+      txt(tk.sub,44,yy+66,13,UA.dim);
+      txt('客服 95217 · 刚刚',44,yy+90,12,'#a5adb5');
+    }else{
+      imgCover(tk.img,40,yy+16,460,200,8,{s:tk.tag.s,w:tk.tag.w});
+      txt(tk.title,40,yy+248,16,'#111','left','700');
+      txt(tk.sub,40,yy+274,13,UA.dim);
+      txt('工单系统 · 刚刚',40,yy+302,12,'#a5adb5');
+    }
+    ctx.restore();
+    y+=h+18;
+  }
+  txt('仅显示最近 3 条记录',W/2,y+8,12,'#b3bcc4','center');
+  tabbar(1);
+}
+
+/* ============ P4 客服会话 ============ */
+const CHAT=[
+  {at:18.6,who:'sys',text:'会话已转接人工客服 · 工号 217'},
+  {at:19.4,who:'me',text:'我家没人住，怎么会有 18 吨水？'},
+  {at:20.6,who:'cs',text:'您好，经核实，该户水表运转正常。'},
+  {at:21.8,who:'me',text:'屋里没人。爸妈都不在了，房子空了一年多。'},
+  {at:23.0,who:'cs',text:'经系统判定，该户用水人数：4。'},
+  {at:24.4,who:'me',text:'4个人？你进过我家吗？'},
+  {at:25.6,who:'cs',text:'已为您加急派单复核，预计 30 分钟内上门。'},
+  {at:26.8,who:'cs',text:'复核期间，请您不要靠近现场。'}
+];
+function wrapChat(text,maxW){
+  ctx.save();ctx.font='400 16px "Microsoft YaHei",sans-serif';
+  const lines=[];let cur='';
+  for(const ch of text){
+    if(ctx.measureText(cur+ch).width>maxW){lines.push(cur);cur=ch;}else cur+=ch;
+  }
+  if(cur)lines.push(cur);ctx.restore();
+  return lines;
+}
+function pageChat(){
+  ctx.fillStyle=UA.chatbg;ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='#FFF';ctx.fillRect(0,0,W,104);
+  line2(0,104,W,104,'#D9D9D9');
+  statusBar();
+  txt('‹',20,80,28,'#111');
+  txt('物业管家',64,80,18,'#111','left','600');
+  txt('● 在线',180,80,12,UA.green,'left','600');
+  txt('···',516,80,20,'#111','right','700');
+  const TOP=112,BOT=H-64;
+  let y=TOP+10;
+  const rows=[];
+  for(const m of CHAT){
+    if(m.at>tGlobal)break;
+    const a=clamp((tGlobal-m.at)/0.28,0,1);
+    if(m.who==='sys'){rows.push({m,y,h:30,a});y+=44;continue;}
+    const lines=wrapChat(m.text,300);
+    const bh=lines.length*25+22;
+    rows.push({m,y,h:bh+(m.who==='cs'?0:0),a,lines});
+    y+=bh+16;
+  }
+  // typing
+  const typingWin=[[27.9,28.6]];
+  let ty=y;
+  const off=Math.max(0,y-BOT+16);
+  ctx.save();ctx.beginPath();ctx.rect(0,TOP-6,W,BOT-TOP+8);ctx.clip();
+  for(const r of rows){
+    const sy=r.y-off;const m=r.m;
+    ctx.save();ctx.globalAlpha=r.a;
+    const dy=(1-ease(r.a))*12;
+    if(m.who==='sys'){
+      rrect(W/2-150,sy+dy,300,26,4,'rgba(0,0,0,.05)');
+      txt(m.text,W/2,sy+dy+18,12,UA.sys,'center');
+    }else if(m.who==='me'){
+      const bw=Math.min(316,Math.max(...r.lines.map(l=>{ctx.save();ctx.font='400 16px "Microsoft YaHei",sans-serif';const w=ctx.measureText(l).width;ctx.restore();return w;}))+26);
+      drawAvatarBox(480,sy+dy,40,UA.mine,'我');
+      rrect(468-bw,sy+dy,bw,r.h,6,UA.mine);
+      r.lines.forEach((l,i)=>txt(l,468-bw+13,sy+dy+24+i*25,16,'#111'));
+    }else{
+      drawAvatarBox(20,sy+dy,40,UA.brand,'物');
+      const bw=Math.min(316,Math.max(...r.lines.map(l=>{ctx.save();ctx.font='400 16px "Microsoft YaHei",sans-serif';const w=ctx.measureText(l).width;ctx.restore();return w;}))+26);
+      rrect(72,sy+dy,bw,r.h,6,UA.other);
+      r.lines.forEach((l,i)=>txt(l,85,sy+dy+24+i*25,16,'#111'));
+    }
+    ctx.restore();
+  }
+  for(const [a,b] of typingWin){
+    if(tGlobal>a&&tGlobal<b){
+      drawAvatarBox(20,BOT-84,40,UA.brand,'物');
+      rrect(72,BOT-84,74,44,6,UA.other);
+      for(let i=0;i<3;i++){
+        ctx.globalAlpha=(Math.floor(tGlobal*3)%3)===i?1:.3;
+        ctx.beginPath();ctx.arc(92+i*20,BOT-62,4,0,7);ctx.fillStyle='#B4B4B4';ctx.fill();
+      }
+      ctx.globalAlpha=1;
+    }
+  }
+  ctx.restore();
+  // input bar
+  ctx.fillStyle='#F7F7F7';ctx.fillRect(0,H-64,W,64);
+  line2(0,H-64,W,H-64,'#D9D9D9');
+  rrect(58,H-50,368,38,6,'#FFF');
+  txt('说点什么...',74,H-25,15,'#B4B4B4');
+  txt('＋',492,H-24,24,'#111','center','600');
+}
+
+/* ============ P5 复核照片 ============ */
+const BOWLS_BOX=[[0.29,0.57],[0.485,0.555],[0.645,0.57],[0.265,0.705],[0.50,0.725],[0.685,0.715]];
+function pageReview(){
+  ctx.fillStyle=UA.page;ctx.fillRect(0,0,W,H);
+  appChrome('复核结果 GD-1121');
+  rrect(24,122,492,404,12,'#FFF');
+  const px=40,py=138,pw=460,ph=372;
+  imgCover('bowls',px,py,pw,ph,8);
+  // AI 检测框
+  BOWLS_BOX.forEach((b,i)=>{
+    const at=27.7+i*0.35;
+    const a=clamp((tGlobal-at)/0.2,0,1);
+    if(a<=0)return;
+    ctx.save();ctx.globalAlpha=a;
+    const bw=0.17*pw,bh=0.15*ph;
+    const x=px+b[0]*pw-bw/2,y=py+b[1]*ph-bh/2;
+    ctx.strokeStyle=UA.green;ctx.lineWidth=1.6;
+    ctx.setLineDash([5,4]);ctx.strokeRect(x,y,bw,bh);ctx.setLineDash([]);
+    rrect(x,y-18,64,16,3,'rgba(7,193,96,.92)');
+    txt('使用中',x+32,y-6,10,'#fff','center','600');
+    ctx.restore();
+  });
+  txt('现场照片 · 堂屋 · 11月18日 23:52',40,552,13,UA.dim);
+  // 结果行
+  rrect(24,576,492,64,10,'#FFF');
+  txt('识别结果',44,600,13,UA.dim);
+  txt('碗筷 × 6 · 桌面水渍 · 全部为湿',44,626,15,'#111','left','600');
+  txt('正常',476,614,15,UA.green,'right','700');
+  rrect(24,652,492,64,10,'#FFF7E8');
+  txt('⚠',44,690,17,UA.orange,'left','700');
+  txt('当前用水速率 0.4 L/min · 持续中',76,690,15,'#8a5b00','left','600','sans');
+  txt('用水人数：4',492,690,14,UA.red,'right','700');
+  // banner
+  const ba=clamp((tGlobal-33.0)/0.3,0,1);
+  if(ba>0){
+    ctx.save();ctx.globalAlpha=ba;
+    const by=(1-ease(ba))*-60;
+    rrect(14,14+by,512,64,12,'rgba(20,24,30,.94)');
+    rrect(28,30+by,32,32,8,UA.brand);
+    txt('城',44,52+by,18,'#fff','center','700');
+    txt('新现场照片已上传',72,42+by,14,'#fff','left','600');
+    txt('点击查看 · 刚刚',72,62+by,11,'#9fb0c3');
+    ctx.restore();
+  }
+  tabbar(1);
+}
+
+/* ============ P6 最后一照片 ============ */
+function pageDoor(){
+  ctx.fillStyle=UA.page;ctx.fillRect(0,0,W,H);
+  appChrome('现场照片 · 2 / 2');
+  rrect(24,122,492,600,12,'#FFF');
+  const px=68,py=140,pw=404,ph=570;
+  imgCover('door',px,py,pw,ph,8);
+  const a=clamp((tGlobal-35.2)/0.3,0,1);
+  if(a>0){
+    ctx.save();ctx.globalAlpha=a;
+    rrect(px+14,py+14,300,26,4,'rgba(0,0,0,.62)');
+    txt('上传定位：恒安公寓 1203',px+22,py+32,12,'#fff','left','600');
+    ctx.restore();
+  }
+  rrect(24,738,492,58,10,'#FFF7E8');
+  txt('⚠',44,774,17,UA.orange,'left','700');
+  txt('定位与您的当前位置重合',76,774,15,'#8a5b00','left','600','sans');
+  txt('幸福路7号 → 此处',492,774,12,UA.red,'right','600');
+  // 致电按钮
+  rrect(24,812,492,52,10,'#FFF');
+  const bp=clamp((tGlobal-37.2)/0.15,0,1);
+  rrect(40,822,460,32,6,bp>0?UA.brand:'#EEF3FA');
+  txt('致电物业  95217',270,844,15,bp>0?'#fff':UA.brand,'center','700');
+  txt('服务已送达 · 请对本次服务评价',24,888,12,'#a5adb5','left');
+  // 好友申请横幅
+  const fa=clamp((tGlobal-39.6)/0.3,0,1);
+  if(fa>0){
+    ctx.save();ctx.globalAlpha=fa;
+    const by=(1-ease(fa))*-60;
+    rrect(14,14+by,512,64,12,'rgba(20,24,30,.94)');
+    drawAvatarBox(28,26+by,40,'#5a6b7d','刘');
+    txt('抄表员 刘伟 请求添加您为好友',80,44+by,14,'#fff','left','600');
+    txt('验证消息：您家的水，烧好了',80,64+by,11,'#9fb0c3');
+    ctx.restore();
+  }
+  tabbar(1);
+  // 呼叫浮层
+  if(tGlobal>=37.6&&tGlobal<=39.4){
+    const ca=clamp((tGlobal-37.6)/0.2,0,1);
+    ctx.save();ctx.globalAlpha=ca;
+    ctx.fillStyle='#0C1B26';ctx.fillRect(0,0,W,H);
+    ctx.beginPath();ctx.arc(W/2,300,64,0,7);ctx.fillStyle='#16303f';ctx.fill();
+    txt('城',W/2,312,44,'#9fc2d8','center','700');
+    txt('城南智慧物业',W/2,420,22,'#E8EEF6','center','600');
+    const s=tGlobal<38.7?'正在呼叫…':'无人接听';
+    txt(s,W/2,458,15,'#8fa7b8','center');
+    ctx.beginPath();ctx.arc(W/2,760,34,0,7);ctx.fillStyle=UA.red;ctx.fill();
+    txt('挂断',W/2,766,14,'#fff','center','600');
+    ctx.restore();
+  }
+}
+
+/* ============ P7 锁屏 2 ============ */
+function pageLock2(){
+  pageLock();
+  notifCard(320,tGlobal-40.9,'现场照片（2）','定位：恒安公寓1203 · 服务已送达','物业管家',UA.brand);
+  notifCard(430,tGlobal-41.7,'用水异常已解除','经复核，该户用水人数：4 · 感谢您的理解','城南智慧物业',UA.brand);
+  notifCard(540,tGlobal-42.5,'水表读数已更新','SB-0417 · 0472 · 用水速率 0.4 L/min','城南智慧物业',UA.brand);
+}
+
+/* ============ page manager ============ */
+let tGlobal=0;
+const PAGES=[
+  {fn:pageLock,t:0},
+  {fn:pageHome,t:3.2},
+  {fn:pageTickets,t:10.2},
+  {fn:pageChat,t:17.8},
+  {fn:pageReview,t:27.2},
+  {fn:pageDoor,t:34.6},
+  {fn:pageLock2,t:41.0}
+];
+function drawPages(t){
+  let i=0;
+  for(let k=0;k<PAGES.length;k++)if(t>=PAGES[k].t)i=k;
+  const cur=PAGES[i];
+  const p=clamp((t-cur.t)/0.38,0,1);
+  if(p<1&&i>0){
+    const prev=PAGES[i-1];
+    ctx.save();ctx.translate(-W*ease(p),0);prev.fn();ctx.restore();
+    ctx.save();ctx.translate(W*(1-ease(p)),0);cur.fn();ctx.restore();
+  }else cur.fn();
+}
+function grain(seed){
+  const r=rng(seed);ctx.save();ctx.globalAlpha=.02;
+  for(let i=0;i<120;i++){ctx.fillStyle=r()>.5?'#000':'#fff';ctx.fillRect(r()*W,r()*H,1+r()*40,1);}
+  ctx.restore();
+}
+function glitch(t,s){
+  if(s<=0)return;
+  const r=rng(Math.floor(t*40)*71+3),n=Math.floor(s*6);
+  for(let i=0;i<n;i++){
+    const y=r()*H,h=2+r()*10,dx=(r()-.5)*30*s;
+    try{ctx.drawImage(c,0,y,W,h,dx,y,W,h);}catch(e){}
+  }
+}
+function draw(t){
+  tGlobal=clamp(t,0,44.98);
+  drawPages(tGlobal);
+  grain(Math.floor(t*15)+1);
+  const g=(t>=23.0&&t<23.3)?0.4:(t>=31.5&&t<31.8)?0.3:(t>=34.8&&t<35.1)?0.4:(t>=42.5&&t<42.8)?0.45:0;
+  glitch(t,g);
+  if(t>43.0){
+    const a=clamp((t-43.0)/.5,0,1);
+    ctx.save();ctx.globalAlpha=a;ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);ctx.restore();
+  }
+  if(t>43.7){
+    const a=clamp((t-43.7)/.35,0,1);
+    ctx.save();ctx.globalAlpha=a;
+    txt('幸福路 7 号 · 空置 14 个月',W/2,398,15,UA.sys,'center','500');
+    if(t>44.1)txt('本周用水：18 吨',W/2,436,15,UA.sys,'center','500');
+    if(t>44.4)txt('6 副碗筷，都还湿着。',W/2,486,24,'#ffffff','center','700');
+    ctx.restore();
+  }
+}
+window.seek=x=>draw(x);
+if(imgNeed>0&&imgLoaded>=imgNeed)window.__ready=true;
+else{const iv=setInterval(()=>{if(imgLoaded>=imgNeed){window.__ready=true;clearInterval(iv);}},80);}
+if(!CAPTURE){
+  const t0=performance.now();
+  (function loop(now){draw(((now-t0)/1000)%45);requestAnimationFrame(loop);})(t0);
+}
+</script>
+</body>
+</html>

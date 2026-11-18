@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>宽带管家 / 在线设备</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden}
+  body{display:flex;align-items:center;justify-content:center}
+  canvas{width:540px;height:960px;display:block}
+</style>
+</head>
+<body>
+<canvas id="c" width="540" height="960"></canvas>
+<script src="photos.js"></script>
+<script>
+const c=document.getElementById('c');
+const ctx=c.getContext('2d',{alpha:false});
+const W=540,H=960;
+const CAPTURE=new URLSearchParams(location.search).has('capture');
+
+const T={
+  bg:'#070C14', card:'#101927', card2:'#0C1420', line:'#1B2A3D',
+  accent:'#35D0E0', dim:'#6B7E96', text:'#D8E6F2',
+  red:'#FF5252', green:'#2FD07A', amber:'#FFB74D'
+};
+const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+const ease=p=>p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
+const blink=(t,p=1)=>(t%p)<p/2;
+function rng(seed){let s=seed>>>0;return ()=>((s=(s*1664525+1013904223)>>>0)/4294967296);}
+
+const IMGS={};let imgLoaded=0,imgNeed=0;
+if(window.PHOTOS){for(const k in PHOTOS){imgNeed++;const im=new Image();im.onload=()=>{imgLoaded++;};im.src=PHOTOS[k];IMGS[k]=im;}}
+function img(k){const im=IMGS[k];return (im&&im.complete&&im.naturalWidth)?im:null;}
+
+function txt(s,x,y,size=16,color=T.text,align='left',weight='400',font='sans'){
+  ctx.save();
+  const fam=font==='sans'?'"Microsoft YaHei","PingFang SC",sans-serif':'"Consolas","Courier New",monospace';
+  ctx.font=weight+' '+size+'px '+fam;
+  ctx.fillStyle=color;ctx.textAlign=align;ctx.textBaseline='alphabetic';
+  ctx.fillText(s,x,y);ctx.restore();
+}
+function rrect(x,y,w,h,r,fill,stroke){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();
+  if(fill){ctx.fillStyle=fill;ctx.fill();}
+  if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1;ctx.stroke();}
+}
+function line2(x1,y1,x2,y2,color=T.line,lw=1){
+  ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.strokeStyle=color;ctx.lineWidth=lw;ctx.stroke();
+}
+function imgCover(k,x,y,w,h,r=8,tag){
+  const im=img(k);
+  rrect(x,y,w,h,r,'#0a0f16');
+  if(im){
+    const iw=im.naturalWidth,ih=im.naturalHeight;
+    const s=Math.max(w/iw,h/ih),dw=iw*s,dh=ih*s;
+    ctx.save();rrect(x,y,w,h,r);ctx.clip();
+    ctx.drawImage(im,x+(w-dw)/2,y+(h-dh)/2,dw,dh);ctx.restore();
+  }
+  if(tag){rrect(x+10,y+h-28,tag.w,22,4,'rgba(0,0,0,.65)');txt(tag.s,x+10+tag.w/2,y+h-12,12,'#fff','center','500');}
+}
+function statusBar(){
+  txt('00:12',24,24,15,'#D8E6F2','left','600');
+  for(let i=0;i<4;i++){ctx.fillStyle=i<3?'#D8E6F2':'#31435c';ctx.fillRect(440+i*7,26-i*2,4,4+i*2);}
+  txt('WiFi',470,24,11,'#D8E6F2','left','600');
+  rrect(500,14,24,12,2,null,'#D8E6F2');
+  ctx.fillStyle='#D8E6F2';ctx.fillRect(502,16,17,8);
+  ctx.fillStyle='#D8E6F2';ctx.fillRect(525,17,3,6);
+}
+function appHeader(title,sub){
+  ctx.fillStyle='#0B1322';ctx.fillRect(0,0,W,104);
+  line2(0,104,W,104,T.line);
+  // router icon
+  rrect(24,52,40,40,10,T.accent);
+  txt('⌂',44,80,24,'#04202a','center','700');
+  txt(title,76,72,19,T.text,'left','600');
+  if(sub)txt(sub,76,92,12,T.dim);
+  txt('···',516,80,20,T.dim,'right','700');
+}
+
+/* ---------- 通知卡 ---------- */
+function notifCard(y,t,title,body,appName,color){
+  const a=clamp(t/0.3,0,1);
+  if(a<=0)return;
+  ctx.save();ctx.globalAlpha=a;
+  const yy=y+(1-ease(a))*-40;
+  rrect(14,yy,512,96,14,'rgba(18,26,40,.97)','rgba(120,160,200,.15)');
+  rrect(28,yy+20,54,54,12,color);
+  txt(appName[0],28+27,yy+20+36,26,'#04202a','center','700');
+  txt(appName,96,yy+28,13,T.dim,'left','600');
+  txt(title,96,yy+50,15,T.text,'left','600');
+  const lines=body.length>24?[body.slice(0,24),body.slice(24,48)]:[body];
+  lines.forEach((l,i)=>txt(l,96,yy+70+i*18,12,'#8fa3b8'));
+  txt('现在',500,yy+28,11,'#5d7089','right');
+  ctx.restore();
+}
+
+/* ---------- P1 锁屏 ---------- */
+function pageLock(){
+  const g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#050A12');g.addColorStop(.6,'#0A1524');g.addColorStop(1,'#05080D');
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  const r=rng(41);ctx.save();ctx.globalAlpha=.45;
+  for(let i=0;i<70;i++){ctx.fillStyle='#22344c';ctx.beginPath();ctx.arc(r()*W,r()*H,r()*1.6,0,7);ctx.fill();}
+  ctx.restore();
+  // wifi arcs decoration
+  ctx.save();ctx.globalAlpha=.10;ctx.strokeStyle='#35D0E0';ctx.lineWidth=2;
+  for(let i=1;i<=4;i++){ctx.beginPath();ctx.arc(W/2,760,i*46,-2.35,-0.79);ctx.stroke();}
+  ctx.restore();
+  txt('00:12',W/2,190,64,'#DFECF7','center','200');
+  txt('11月19日 星期四',W/2,232,16,'#7f93ab','center','500');
+  notifCard(320,tGlobal-0.9,'陌生设备提醒','检测到 2 台未知设备接入您的网络','宽带管家',T.accent);
+  notifCard(430,tGlobal-2.3,'设备上线','未知设备 #2 · 信号强度 -3 dBm','宽带管家',T.accent);
+  ctx.save();ctx.globalAlpha=.5+0.3*Math.sin(tGlobal*2.2);
+  txt('上滑解锁',W/2,880,14,'#5d7089','center','500');ctx.restore();
+}
+
+/* ---------- P2 首页 ---------- */
+const DEVICES=[
+  {at:4.0,icon:'phone',name:'我的 iPhone',sub:'本机 · 5G 频段',rssi:'-47 dBm',red:false},
+  {at:4.5,icon:'tv',name:'客厅电视',sub:'有线 · 已连接',rssi:'—',red:false},
+  {at:5.0,icon:'robot',name:'扫地机器人',sub:'2.4G 频段',rssi:'-61 dBm',red:false},
+  {at:5.5,icon:'lock',name:'智能门锁',sub:'2.4G 频段 · 在线',rssi:'-55 dBm',red:false},
+  {at:6.0,icon:'speaker',name:'智能音箱',sub:'2.4G 频段',rssi:'-58 dBm',red:false},
+  {at:7.0,icon:'unknown',name:'未知设备 #1',sub:'5G 频段 · 刚接入',rssi:'-12 dBm',red:true},
+  {at:7.8,icon:'unknown',name:'未知设备 #2',sub:'5G 频段 · 刚接入',rssi:'-3 dBm',red:true}
+];
+function drawIcon(type,x,y,s,color){
+  ctx.save();ctx.translate(x,y);
+  ctx.strokeStyle=color;ctx.fillStyle=color;ctx.lineWidth=1.6;
+  if(type==='phone'){rrect(-s*0.28,-s*0.42,s*0.56,s*0.84,3,null,color);line2(-s*0.12,s*0.3,s*0.12,s*0.3,color);}
+  else if(type==='tv'){rrect(-s*0.45,-s*0.34,s*0.9,s*0.6,3,null,color);line2(-s*0.2,s*0.44,s*0.2,s*0.44,color);}
+  else if(type==='robot'){ctx.beginPath();ctx.arc(0,0,s*0.36,0,7);ctx.stroke();ctx.beginPath();ctx.arc(0,0,s*0.12,0,7);ctx.fill();}
+  else if(type==='lock'){rrect(-s*0.24,-s*0.1,s*0.48,s*0.44,4,null,color);ctx.beginPath();ctx.arc(0,-s*0.12,s*0.2,Math.PI,0);ctx.stroke();ctx.beginPath();ctx.arc(0,s*0.1,s*0.06,0,7);ctx.fill();}
+  else if(type==='speaker'){rrect(-s*0.2,-s*0.4,s*0.4,s*0.8,6,null,color);ctx.beginPath();ctx.arc(0,s*0.08,s*0.14,0,7);ctx.stroke();}
+  else{ctx.beginPath();ctx.arc(0,0,s*0.38,0,7);ctx.stroke();txt('?',0,s*0.14,s*0.4,color,'center','700');}
+  ctx.restore();
+}
+function rssiBars(x,y,val,t,red){
+  for(let i=0;i<4;i++){
+    const on=(t*3%4)>i;
+    ctx.fillStyle=red?(on?T.red:'#3a1b1b'):(on?T.accent:'#1a2c3d');
+    ctx.fillRect(x+i*7,y+12-i*4,4,4+i*4);
+  }
+}
+function pageHome(){
+  ctx.fillStyle=T.bg;ctx.fillRect(0,0,W,H);
+  appHeader('宽带管家','Home_5G_0417 · 已连接');
+  statusBar();
+  // speed card
+  rrect(24,122,492,120,12,T.card);
+  txt('实时速率',44,152,12,T.dim,'left','600');
+  const j=Math.sin(tGlobal*7)*4+Math.sin(tGlobal*13)*2;
+  txt('↓ 312.'+String(Math.floor(4+Math.abs(j))),44,206,30,T.accent,'left','700');
+  txt('Mbps',168,206,13,T.dim);
+  txt('↑ 48.'+String(Math.floor(2+Math.abs(j)/2)),290,206,30,T.text,'left','700');
+  txt('Mbps',414,206,13,T.dim);
+  // device count
+  rrect(24,258,492,96,12,T.card);
+  txt('在线设备',44,290,12,T.dim,'left','600');
+  txt('12',44,338,44,T.text,'left','700');
+  rrect(150,300,240,30,6,'#2a1518');
+  txt('含 2 台未知设备 · 点击查看',270,320,13,T.red,'center','600');
+  txt('›',496,322,16,T.dim,'right');
+  // device list
+  txt('设备列表',24,388,13,T.dim,'left','600');
+  let y=402;
+  for(const d of DEVICES){
+    const a=clamp((tGlobal-d.at)/0.25,0,1);
+    if(a<=0)continue;
+    ctx.save();ctx.globalAlpha=a;
+    const yy=y+(1-ease(a))*16;
+    rrect(24,yy,492,64,10,d.red?'#1c0f14':T.card,d.red?T.red:null);
+    drawIcon(d.icon,52,yy+32,22,d.red?T.red:T.accent);
+    txt(d.name,92,yy+28,15,d.red?T.red:T.text,'left','600');
+    txt(d.sub,92,yy+50,12,T.dim);
+    rssiBars(420,yy+22,0,tGlobal,d.red);
+    txt(d.rssi,484,yy+40,12,d.red?T.red:T.dim,'right','600');
+    ctx.restore();
+    y+=72;
+  }
+  txt('家庭网络 · 已开启防蹭网',24,y+10,12,T.dim);
+}
+
+/* ---------- 信号部件 ---------- */
+function rssiMeter(x,y,w,val,label,color){
+  txt('信号强度',x,y-8,12,T.dim,'left','600');
+  rrect(x,y,w,10,4,'#0d1622',T.line);
+  const p=clamp((val+90)/90,0,1);
+  ctx.fillStyle=color;
+  rrect(x,y,w*p,10,4,ctx.fillStyle);
+  // marker
+  ctx.fillStyle=T.text;
+  ctx.fillRect(x+w*p-2,y-3,4,16);
+  txt(val+' dBm',x+w,y-8,13,color,'right','700');
+  txt(label,x,y+34,15,T.text,'left','700','sans');
+}
+
+/* ---------- P3 详情1 ---------- */
+function pageDetail1(){
+  ctx.fillStyle=T.bg;ctx.fillRect(0,0,W,H);
+  appHeader('设备详情 · 未知设备','#1');
+  statusBar();
+  rrect(24,122,492,330,12,T.card);
+  drawIcon('unknown',66,190,30,T.red);
+  txt('设备名称：—（未广播）',110,176,16,T.text,'left','600');
+  txt('类型：未知 · 5G 频段',110,200,13,T.dim);
+  const rows=[
+    ['MAC 地址','A4:7B:9D:••:••:17'],
+    ['制造商','未知'],
+    ['首次接入','00:12:41'],
+    ['累计流量','0 B'],
+    ['IPv6','已分配']
+  ];
+  rows.forEach((r,i)=>{
+    txt(r[0],44,258+i*30,13,T.dim);
+    txt(r[1],250,258+i*30,13,T.text,'left','500');
+    line2(44,266+i*30,496,266+i*30,'#16223400');
+  });
+  // signal
+  rrect(24,472,492,150,12,T.card);
+  const reconnect=tGlobal>15.4;
+  const val=reconnect?(tGlobal>17?-4:-8):-12;
+  const dist=reconnect?(tGlobal>17?'0.1 m':'0.2 m'):'0.5 m';
+  rssiMeter(44,520,452,val,dist,reconnect?T.red:T.amber);
+  // button / toast
+  const tapped=tGlobal>14.0;
+  rrect(24,646,492,54,10,tapped?'#1c0f14':T.card,tapped?T.red:null);
+  txt(tapped?'已发送断开指令 · 该设备已重新连接':'断开该设备',270,680,15,tapped?T.red:T.accent,'center','700');
+  if(tGlobal>15.4){
+    ctx.save();ctx.globalAlpha=blink(tGlobal,.6)?1:.4;
+    txt('断开失败（3 / 3）· 设备拥有更高权限',270,730,13,T.red,'center','600');
+    ctx.restore();
+  }
+  txt('提示：陌生设备可能通过 WPS 漏洞接入',24,780,12,T.dim);
+  tabbarRouter(1);
+}
+function tabbarRouter(active){
+  ctx.fillStyle='#0B1322';ctx.fillRect(0,H-64,W,64);
+  line2(0,H-64,W,H-64,T.line);
+  const items=['首页','设备','网速','工具'];
+  items.forEach((s,i)=>{
+    const x=67+i*135;
+    txt(s,x,H-30,13,active===i?T.accent:T.dim,'center','600');
+    ctx.fillStyle=active===i?T.accent:'#22344c';
+    rrect(x-9,H-52,18,4,2,ctx.fillStyle);
+  });
+}
+
+/* ---------- P4 详情2 ---------- */
+const LOG2=[
+  {at:19.2,s:'00:14:02 · 接入网络'},
+  {at:20.2,s:'00:14:41 · 流量 0 B · 无任何请求'},
+  {at:21.4,s:'00:15:03 · 访问「家庭存储」'},
+  {at:22.6,s:'00:15:37 · 向客厅电视发起投屏'},
+  {at:23.8,s:'00:15:52 · 投屏内容：实时画面'}
+];
+function pageDetail2(){
+  ctx.fillStyle=T.bg;ctx.fillRect(0,0,W,H);
+  appHeader('设备详情 · 未知设备','#2');
+  statusBar();
+  rrect(24,122,492,300,12,T.card,T.red);
+  drawIcon('phone',66,190,30,T.red);
+  txt('设备名称：你',110,176,20,T.red,'left','700');
+  txt('类型：iPhone · iOS',110,202,13,T.dim);
+  const rows=[
+    ['MAC 地址','A4:7B:9D:••:••:17'],
+    ['与本机对比','完全一致'],
+    ['本机状态','我的 iPhone · 在线（当前页面）'],
+    ['信号强度','-3 dBm · 满格'],
+    ['预计距离','0.0 m']
+  ];
+  rows.forEach((r,i)=>{
+    txt(r[0],44,258+i*30,13,T.dim);
+    txt(r[1],250,258+i*30,13,i===0||i===1?T.red:T.text,'left','600');
+  });
+  rrect(24,440,492,54,10,'#2a1518',T.red);
+  txt('⚠ 同一 MAC 地址出现 2 台设备',44,474,15,T.red,'left','700','sans');
+  // log
+  txt('最近活动',24,530,13,T.dim,'left','600');
+  let y=548;
+  for(const l of LOG2){
+    const a=clamp((tGlobal-l.at)/0.25,0,1);
+    if(a<=0)continue;
+    ctx.save();ctx.globalAlpha=a;
+    txt(l.s,40,y+16,14,l.at>=22.6?T.red:T.text,'left','500','mono');
+    ctx.restore();
+    y+=34;
+  }
+  tabbarRouter(1);
+}
+
+/* ---------- P5 投屏 ---------- */
+function pageCast(){
+  ctx.fillStyle=T.bg;ctx.fillRect(0,0,W,H);
+  appHeader('投屏请求','客厅电视 · 已自动接通');
+  statusBar();
+  rrect(24,122,492,480,12,T.card,T.red);
+  imgCover('cast',40,138,460,380,8,{s:'实时画面',w:86});
+  txt('来源设备',40,548,13,T.dim);
+  txt('「你」',40,576,18,T.red,'left','700');
+  txt('目标',300,548,13,T.dim);
+  txt('客厅电视',300,576,18,T.text,'left','700');
+  line2(40,596,500,596,T.line);
+  txt('您的电视没有摄像头。',40,626,15,T.red,'left','700','sans');
+  // sonar
+  rssiMeter(44,700,452,-3,'0.0 m · 就在你旁边',T.red);
+  // banner
+  const ba=clamp((tGlobal-33.0)/0.3,0,1);
+  if(ba>0){
+    ctx.save();ctx.globalAlpha=ba;
+    const by=(1-ease(ba))*-60;
+    rrect(14,14+by,512,64,12,'rgba(10,18,30,.95)','rgba(120,160,200,.2)');
+    rrect(28,30+by,32,32,8,T.red);
+    txt('投',44,52+by,16,'#fff','center','700');
+    txt('画面已同步到你的手机',72,42+by,14,T.text,'left','600');
+    txt('你正被观看 · 刚刚',72,62+by,11,T.dim);
+    ctx.restore();
+  }
+  tabbarRouter(0);
+}
+
+/* ---------- P6 拓扑 ---------- */
+const NODES=[
+  {a:-1.4,r:170},{a:-0.9,r:200},{a:-0.5,r:160},{a:-0.15,r:195},{a:0.2,r:150},
+  {a:0.55,r:190},{a:0.95,r:165},{a:1.35,r:200},{a:1.75,r:155},{a:2.2,r:195},{a:2.6,r:170}
+];
+function pageTopo(){
+  ctx.fillStyle='#060B12';ctx.fillRect(0,0,W,H);
+  appHeader('网络拓扑','全部设备');
+  statusBar();
+  const cx=270,cy=330;
+  // links
+  NODES.forEach((n,i)=>{
+    const x=cx+Math.cos(n.a)*n.r, y=cy+Math.sin(n.a)*n.r;
+    line2(cx,cy,x,y,'rgba(53,208,224,.22)',1.2);
+  });
+  // moving red node
+  const p=ease(clamp((tGlobal-34.6)/2.2,0,1));
+  const rr=210-(210-16)*p;
+  const ra=-0.35;
+  const rx=cx+Math.cos(ra)*rr, ry=cy+Math.sin(ra)*rr;
+  line2(cx,cy,rx,ry,'rgba(255,82,82,.7)',1.5+p*2.5);
+  NODES.forEach((n,i)=>{
+    const x=cx+Math.cos(n.a)*n.r, y=cy+Math.sin(n.a)*n.r;
+    ctx.beginPath();ctx.arc(x,y,7,0,7);ctx.fillStyle='#1b3d4d';ctx.fill();
+    ctx.strokeStyle=T.accent;ctx.lineWidth=1.2;ctx.stroke();
+  });
+  // router center
+  const glow=0.5+0.5*Math.sin(tGlobal*4);
+  ctx.beginPath();ctx.arc(cx,cy,16+glow*3,0,7);ctx.fillStyle='rgba(53,208,224,.25)';ctx.fill();
+  ctx.beginPath();ctx.arc(cx,cy,13,0,7);ctx.fillStyle=T.accent;ctx.fill();
+  txt('路由器',cx,cy+34,12,T.dim,'center','600');
+  // red node
+  ctx.beginPath();ctx.arc(rx,ry,9+p*3,0,7);ctx.fillStyle=T.red;ctx.fill();
+  ctx.save();ctx.globalAlpha=.4+p*.4;
+  ctx.beginPath();ctx.arc(rx,ry,16+p*10,0,7);ctx.strokeStyle=T.red;ctx.stroke();
+  ctx.restore();
+  txt('你',rx+16,ry+5,13,T.red,'left','700');
+  txt('11 台已识别设备',24,560,13,T.dim,'left','600');
+  txt('未知设备 #1：已离线',24,590,14,T.dim,'left');
+  txt('未知设备 #2：0.0 m',24,616,14,T.red,'left','600');
+  // door snapshot
+  const da=clamp((tGlobal-35.6)/0.3,0,1);
+  if(da>0){
+    ctx.save();ctx.globalAlpha=da;
+    rrect(24,640,220,150,10,T.card,T.line);
+    imgCover('door',36,652,196,110,6,{s:'00:14 抓拍',w:82});
+    txt('智能门锁 · 门口有人停留',36,780,12,T.dim);
+    ctx.restore();
+  }
+  // permission dialog
+  if(tGlobal>=37.6){
+    const da2=clamp((tGlobal-37.6)/0.25,0,1);
+    ctx.save();ctx.globalAlpha=da2;
+    ctx.fillStyle='rgba(0,0,0,.55)';ctx.fillRect(0,0,W,H);
+    const dy2=H/2-110+(1-ease(da2))*30;
+    rrect(70,dy2,400,190,14,'#101927','rgba(255,82,82,.5)');
+    txt('权限请求',270,dy2+44,17,T.text,'center','700');
+    txt('「你」请求管理员权限',270,dy2+78,15,T.dim,'center');
+    const pressed=tGlobal>39.2;
+    rrect(94,dy2+112,170,44,8,pressed?'#1c0f14':'#0d1622',pressed?T.red:T.line);
+    txt('拒绝',179,dy2+140,15,pressed?T.red:T.text,'center','600');
+    rrect(276,dy2+112,170,44,8,'#0d1622',T.line);
+    txt('允许',361,dy2+140,15,T.dim,'center','600');
+    if(tGlobal>39.6)txt('拒绝失败 · 该设备已拥有管理员权限',270,dy2+186,13,T.red,'center','600');
+    ctx.restore();
+  }
+  tabbarRouter(1);
+}
+
+/* ---------- P7 锁屏2 ---------- */
+function pageLock2(){
+  pageLock();
+  notifCard(320,tGlobal-41.2,'在线设备','当前 13 台 · 可识别 12 台','宽带管家',T.accent);
+  notifCard(430,tGlobal-42.0,'家庭存储','新文件已同步 · 来源：「你」','宽带管家',T.accent);
+}
+
+/* ---------- page manager ---------- */
+let tGlobal=0;
+const PAGES=[
+  {fn:pageLock,t:0},
+  {fn:pageHome,t:3.2},
+  {fn:pageDetail1,t:10.2},
+  {fn:pageDetail2,t:18.0},
+  {fn:pageCast,t:26.0},
+  {fn:pageTopo,t:34.0},
+  {fn:pageLock2,t:41.0}
+];
+function drawPages(t){
+  let i=0;
+  for(let k=0;k<PAGES.length;k++)if(t>=PAGES[k].t)i=k;
+  const cur=PAGES[i];
+  const p=clamp((t-cur.t)/0.38,0,1);
+  if(p<1&&i>0){
+    const prev=PAGES[i-1];
+    ctx.save();ctx.translate(-W*ease(p),0);prev.fn();ctx.restore();
+    ctx.save();ctx.translate(W*(1-ease(p)),0);cur.fn();ctx.restore();
+  }else cur.fn();
+}
+function grain(seed){
+  const r=rng(seed);ctx.save();ctx.globalAlpha=.02;
+  for(let i=0;i<120;i++){ctx.fillStyle=r()>.5?'#000':'#fff';ctx.fillRect(r()*W,r()*H,1+r()*40,1);}
+  ctx.restore();
+}
+function glitch(t,s){
+  if(s<=0)return;
+  const r=rng(Math.floor(t*40)*71+3),n=Math.floor(s*6);
+  for(let i=0;i<n;i++){
+    const y=r()*H,h=2+r()*10,dx=(r()-.5)*30*s;
+    try{ctx.drawImage(c,0,y,W,h,dx,y,W,h);}catch(e){}
+  }
+}
+function draw(t){
+  tGlobal=clamp(t,0,44.98);
+  drawPages(tGlobal);
+  grain(Math.floor(t*15)+1);
+  const g=(t>=15.4&&t<15.7)?0.4:(t>=23.0&&t<23.3)?0.35:(t>=27.0&&t<27.3)?0.4:(t>=39.6&&t<39.9)?0.45:(t>=42.0&&t<42.3)?0.4:0;
+  glitch(t,g);
+  if(t>43.0){
+    const a=clamp((t-43.0)/.5,0,1);
+    ctx.save();ctx.globalAlpha=a;ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);ctx.restore();
+  }
+  if(t>43.7){
+    const a=clamp((t-43.7)/.35,0,1);
+    ctx.save();ctx.globalAlpha=a;
+    txt('当前在线设备：13',W/2,398,15,T.dim,'center','500');
+    if(t>44.0)txt('可识别：12',W/2,436,15,T.dim,'center','500');
+    if(t>44.3)txt('第 13 台，叫「你」。',W/2,486,24,'#ffffff','center','700');
+    ctx.restore();
+  }
+}
+window.seek=x=>draw(x);
+if(imgNeed>0&&imgLoaded>=imgNeed)window.__ready=true;
+else{const iv=setInterval(()=>{if(imgLoaded>=imgNeed){window.__ready=true;clearInterval(iv);}},80);}
+if(!CAPTURE){
+  const t0=performance.now();
+  (function loop(now){draw(((now-t0)/1000)%45);requestAnimationFrame(loop);})(t0);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+# 渲染中间产物（可重新生成，体积大）
+*/frames/
+*/edge-profile*/
+*/photos/*.png
+*.wav
+
+# 检查/临时图
+*/contact_sheet.png
+*/check_end*.png
+*/final_*.png
+*/zoom_*.png
+_*.json
+_h.txt
+.playwright-cli/
+node_modules/
+__pycache__/
+
+# 抓取残留
+douyin_page.html

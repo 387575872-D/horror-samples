@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>微信 / 我们家（3）</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden}
+  body{display:flex;align-items:center;justify-content:center}
+  canvas{width:540px;height:960px;display:block}
+</style>
+</head>
+<body>
+<canvas id="c" width="540" height="960"></canvas>
+<script src="photos.js"></script>
+<script>
+const c=document.getElementById('c');
+const ctx=c.getContext('2d',{alpha:false});
+const W=540,H=960;
+const CAPTURE=new URLSearchParams(location.search).has('capture');
+
+const UA={
+  chatbg:'#EDEDED', header:'#EDEDED', hline:'#D9D9D9',
+  mine:'#95EC69', other:'#FFFFFF', ink:'#111111',
+  sys:'#B2B2B2', name:'#8f8f8f', inputbg:'#F7F7F7'
+};
+const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+const ease=p=>p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
+const blink=(t,p=1)=>(t%p)<p/2;
+function rng(seed){let s=seed>>>0;return ()=>((s=(s*1664525+1013904223)>>>0)/4294967296);}
+
+const IMGS={};
+let imgLoaded=0,imgNeed=0;
+if(window.PHOTOS){
+  for(const k in PHOTOS){
+    imgNeed++;
+    const im=new Image();
+    im.onload=()=>{imgLoaded++;};
+    im.src=PHOTOS[k];
+    IMGS[k]=im;
+  }
+}
+function img(k){
+  const im=IMGS[k];
+  return (im&&im.complete&&im.naturalWidth)?im:null;
+}
+
+/* ---------- messages ---------- */
+const MSGS=[
+  {at:0.2,type:'divider',text:'10月29日'},
+  {at:0.2,type:'sys',text:'妈妈 邀请 你 加入了群聊'},
+  {at:0.2,type:'divider',text:'22:44'},
+  {at:1.2,type:'text',who:'mom',text:'降温了，睡前关好窗。'},
+  {at:2.4,type:'text',who:'mom',text:'锅里给你留了面，别吃凉的。'},
+  {at:3.4,type:'sys',text:'妈妈 撤回了一条消息'},
+  {at:4.4,type:'text',who:'me',text:'妈？'},
+  {at:5.4,type:'text',who:'me',text:'你的号不是停机了吗'},
+  {at:6.6,type:'text',who:'mom',text:'我在家。'},
+  {at:7.8,type:'text',who:'me',text:'妈你别吓我'},
+  {at:10.6,type:'divider',text:'22:46'},
+  {at:11.2,type:'photo',who:'mom',img:'kitchen'},
+  {at:12.4,type:'text',who:'mom',text:'给你留了一碗。'},
+  {at:16.8,type:'text',who:'me',text:'这不是咱家厨房吗'},
+  {at:17.8,type:'text',who:'mom',text:'是啊，我在家。'},
+  {at:18.8,type:'photo',who:'mom',img:'living'},
+  {at:19.8,type:'text',who:'mom',text:'电视自己开了。'},
+  {at:20.8,type:'text',who:'me',text:'妈，你到底在哪'},
+  {at:21.8,type:'loc',who:'mom',title:'华景大厦 B 座 802',sub:'距你 0.0 米'},
+  {at:23.0,type:'text',who:'me',text:'……这是我家'},
+  {at:24.0,type:'text',who:'mom',text:'我知道。'},
+  {at:26.8,type:'divider',text:'22:51'},
+  {at:27.2,type:'voice',who:'mom',dur:'60″'},
+  {at:32.2,type:'text',who:'mom',text:'别听。'},
+  {at:33.0,type:'sys',text:'妈妈 撤回了一条消息'},
+  {at:33.6,type:'divider',text:'22:53'},
+  {at:34.0,type:'photo',who:'mom',img:'doorway'},
+  {at:35.0,type:'text',who:'mom',text:'你灯还亮着。'},
+  {at:36.0,type:'text',who:'me',text:'你在哪拍的？'},
+  {at:36.8,type:'text',who:'mom',text:'你身后。'},
+  {at:39.6,type:'text',who:'me',text:'妈你别过来'},
+  {at:40.6,type:'text',who:'mom',text:'抬头。'},
+  {at:41.6,type:'photo',who:'mom',img:'behind'},
+  {at:47.8,type:'sys',text:'妈妈 开启了位置共享'},
+  {at:48.6,type:'text',who:'mom',text:'别回头。'}
+];
+const VIEWERS=[
+  {start:13.4,end:16.2,img:'kitchen',zoom:1.10},
+  {start:42.4,end:47.6,img:'behind',zoom:1.42}
+];
+const TYPING=[[8.6,10.4],[25.0,26.6],[37.6,39.2]];
+
+/* ---------- helpers ---------- */
+function txt(s,x,y,size=16,color='#111',align='left',weight='400',font='sans'){
+  ctx.save();
+  const fam=font==='sans'?'"Microsoft YaHei","PingFang SC",sans-serif':'"Consolas","Microsoft YaHei",monospace';
+  ctx.font=weight+' '+size+'px '+fam;
+  ctx.fillStyle=color;ctx.textAlign=align;ctx.textBaseline='alphabetic';
+  ctx.fillText(s,x,y);ctx.restore();
+}
+function rrect(x,y,w,h,r,fill,stroke){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);
+  ctx.closePath();
+  if(fill){ctx.fillStyle=fill;ctx.fill();}
+  if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1;ctx.stroke();}
+}
+function wrap(text,maxW,size,weight='400'){
+  ctx.save();ctx.font=weight+' 17px "Microsoft YaHei",sans-serif';
+  const lines=[];let cur='';
+  for(const ch of text){
+    if(ctx.measureText(cur+ch).width>maxW){lines.push(cur);cur=ch;}
+    else cur+=ch;
+  }
+  if(cur)lines.push(cur);
+  ctx.restore();
+  return lines;
+}
+function textBubbleW(m){
+  const lines=wrap(m.text,330);
+  let w=0;ctx.save();ctx.font='400 17px "Microsoft YaHei",sans-serif';
+  for(const l of lines)w=Math.max(w,ctx.measureText(l).width);
+  ctx.restore();
+  return Math.min(354,Math.ceil(w)+26);
+}
+function drawAvatar(k,x,y,size=40){
+  const im=img(k);
+  rrect(x,y,size,size,4,'#DDD');
+  if(im){
+    ctx.save();rrect(x,y,size,size,4);ctx.clip();
+    ctx.drawImage(im,x,y,size,size);ctx.restore();
+  }
+}
+function drawImgRound(k,x,y,w,h,r=6){
+  const im=img(k);
+  rrect(x,y,w,h,r,'#222');
+  if(im){
+    ctx.save();rrect(x,y,w,h,r);ctx.clip();
+    ctx.drawImage(im,x,y,w,h);ctx.restore();
+  }
+}
+
+/* ---------- chrome ---------- */
+function statusBar(t){
+  const time=t<26.8?'22:47':t<33.6?'22:51':'22:53';
+  txt(time,24,24,15,'#111','left','600');
+  // signal bars
+  for(let i=0;i<4;i++){
+    ctx.fillStyle=i<3?'#111':'#C7C7C7';
+    ctx.fillRect(440+i*7,26-i*2,4,4+i*2);
+  }
+  txt('5G',472,24,11,'#111','left','600');
+  // battery
+  rrect(494,14,26,12,2,null,'#111');
+  ctx.fillStyle='#111';ctx.fillRect(496,16,20,8);
+  ctx.fillStyle='#111';ctx.fillRect(521,17,3,6);
+}
+function header(t){
+  ctx.fillStyle=UA.header;ctx.fillRect(0,0,W,104);
+  line2(0,104,W,104,UA.hline);
+  txt('‹',20,80,30,'#111','left','400');
+  // group avatar
+  drawAvatar('family',48,56,44);
+  txt('我们家（3）',104,88,19,'#111','left','600');
+  txt('···',516,84,22,'#111','right','700');
+}
+function line2(x1,y1,x2,y2,color){
+  ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);
+  ctx.strokeStyle=color;ctx.lineWidth=1;ctx.stroke();
+}
+function inputBar(t){
+  ctx.fillStyle=UA.inputbg;ctx.fillRect(0,H-64,W,64);
+  line2(0,H-64,W,H-64,'#D9D9D9');
+  // voice icon
+  ctx.beginPath();ctx.arc(34,H-32,15,0,7);
+  ctx.strokeStyle='#111';ctx.lineWidth=1.5;ctx.stroke();
+  ctx.beginPath();ctx.arc(34,H-36,5,3.34,6.08);ctx.stroke();
+  line2(34,H-30,34,H-22,'#111',1.5);
+  // field
+  rrect(58,H-50,368,38,6,'#FFF');
+  txt('说点什么...',74,H-25,15,'#B4B4B4');
+  // emoji + plus
+  ctx.beginPath();ctx.arc(446,H-32,14,0,7);
+  ctx.strokeStyle='#111';ctx.lineWidth=1.5;ctx.stroke();
+  ctx.beginPath();ctx.arc(446-4,H-34,2.5,0,7);ctx.fillStyle='#111';ctx.fill();
+  ctx.beginPath();ctx.arc(446+4,H-34,2.5,0,7);ctx.fill();
+  ctx.beginPath();ctx.arc(446,H-28,2.5,0,7);ctx.fill();
+  ctx.beginPath();ctx.arc(492,H-32,15,0,7);
+  ctx.strokeStyle='#111';ctx.lineWidth=1.5;ctx.stroke();
+  line2(492-7,H-32,492+7,H-32,'#111',1.5);
+  line2(492,H-32-7,492,H-32+7,'#111',1.5);
+}
+
+/* ---------- chat ---------- */
+const CHAT_TOP=116, CHAT_BOT=H-72, AREA=CHAT_BOT-CHAT_TOP;
+const NAME_H=20;
+function bubbleH(m){
+  const lines=wrap(m.text,330);
+  return lines.length*26+22;
+}
+function thumbDims(m){
+  const im=img(m.img);
+  if(!im)return {w:190,h:220};
+  const iw=im.naturalWidth,ih=im.naturalHeight;
+  const landscape=ih<iw*1.1;
+  return landscape?{w:210,h:Math.round(210*ih/iw)}:{w:190,h:Math.round(190*ih/iw)};
+}
+function layoutRows(t){
+  const rows=[];let y=6;
+  for(const m of MSGS){
+    if(m.at>t)break;
+    let h=0;
+    if(m.type==='divider')h=26;
+    else if(m.type==='sys')h=24;
+    else if(m.type==='text')h=bubbleH(m)+(m.who==='mom'?NAME_H:0);
+    else if(m.type==='photo')h=thumbDims(m).h+(m.who==='mom'?NAME_H:0);
+    else if(m.type==='voice')h=48+(m.who==='mom'?NAME_H:0);
+    else if(m.type==='loc')h=80+(m.who==='mom'?NAME_H:0);
+    rows.push({m,y,h});
+    y+=h+16;
+  }
+  return {rows,total:y};
+}
+function drawChat(t){
+  const {rows,total}=layoutRows(t);
+  const off=Math.max(0,total-AREA);
+  ctx.save();
+  ctx.beginPath();ctx.rect(0,CHAT_TOP-6,W,AREA+8);ctx.clip();
+  for(const r of rows){
+    const sy=CHAT_TOP+r.y-off;
+    if(sy+r.h<CHAT_TOP-10||sy>CHAT_BOT+10)continue;
+    drawRow(r.m,sy,t);
+  }
+  // typing indicator
+  for(const [a,b] of TYPING){
+    if(t>a&&t<b){
+      const ty=CHAT_BOT-70;
+      drawAvatar('avatar_mom',20,ty,40);
+      rrect(72,ty,74,44,6,UA.other);
+      const ph=(t*3)%3;
+      for(let i=0;i<3;i++){
+        ctx.globalAlpha=(Math.floor(t*3)%3)===i?1:.35;
+        ctx.beginPath();ctx.arc(92+i*20,ty+22,4,0,7);
+        ctx.fillStyle='#B4B4B4';ctx.fill();
+      }
+      ctx.globalAlpha=1;
+    }
+  }
+  ctx.restore();
+}
+function drawRow(m,y,t){
+  const a=clamp((t-m.at)/.28,0,1);
+  ctx.save();ctx.globalAlpha=a;
+  const dy=(1-ease(a))*12;
+  y+=dy;
+  if(m.type==='divider'){txt(m.text,W/2,y+16,12,UA.sys,'center');ctx.restore();return;}
+  if(m.type==='sys'){txt(m.text,W/2,y+15,13,UA.sys,'center');ctx.restore();return;}
+  const mine=m.who==='me';
+  if(m.type==='text'){
+    const lines=wrap(m.text,330);
+    const bw=textBubbleW(m),bh=lines.length*26+22;
+    const bx=mine?468-bw:76;
+    if(!mine){
+      txt('妈妈',bx,y+NAME_H-6,12,UA.name);
+      drawAvatar('avatar_mom',20,y+NAME_H,40);
+    }else drawAvatar('avatar_me',480,y,40);
+    rrect(bx,y+(mine?0:NAME_H),bw,bh,6,mine?UA.mine:UA.other);
+    lines.forEach((l,i)=>txt(l,bx+13,y+(mine?0:NAME_H)+24+i*26,17,UA.ink));
+  }
+  else if(m.type==='photo'){
+    const d=thumbDims(m);
+    if(!mine){
+      txt('妈妈',76,y+NAME_H-6,12,UA.name);
+      drawAvatar('avatar_mom',20,y+NAME_H,40);
+      drawImgRound(m.img,76,y+NAME_H,d.w,d.h);
+    }
+  }
+  else if(m.type==='voice'){
+    if(!mine){
+      txt('妈妈',76,y+NAME_H-6,12,UA.name);
+      drawAvatar('avatar_mom',20,y+NAME_H,40);
+      rrect(76,y+NAME_H,210,44,6,UA.other);
+      const played=t>28.4;
+      const p=played?clamp((t-28.4)/2.6,0,1):0;
+      if(played&&p<1){ctx.save();rrect(76,y+NAME_H,210*p,44,6);ctx.clip();ctx.fillStyle='rgba(149,236,105,.5)';ctx.fillRect(76,y+NAME_H,210*p,44);ctx.restore();}
+      const r=rng(7);
+      for(let i=0;i<9;i++){
+        const hgt=6+((i*37)%13);
+        ctx.fillStyle=played&&p>i/9?'#4CAF50':'#8a8a8a';
+        ctx.fillRect(92+i*11,y+NAME_H+22-hgt/2,3,hgt);
+      }
+      txt(m.dur,272,y+NAME_H+29,15,UA.ink,'left','500');
+      if(t<28.4){ctx.beginPath();ctx.arc(300,y+NAME_H+10,5,0,7);ctx.fillStyle='#FA5151';ctx.fill();}
+    }
+  }
+  else if(m.type==='loc'){
+    if(!mine){
+      txt('妈妈',76,y+NAME_H-6,12,UA.name);
+      drawAvatar('avatar_mom',20,y+NAME_H,40);
+      rrect(76,y+NAME_H,258,76,6,UA.other);
+      ctx.beginPath();ctx.arc(98,y+NAME_H+38,13,0,7);
+      ctx.fillStyle='#07C160';ctx.fill();
+      ctx.beginPath();ctx.arc(98,y+NAME_H+36,5,0,7);ctx.fillStyle='#FFF';ctx.fill();
+      ctx.beginPath();ctx.moveTo(98,y+NAME_H+46);ctx.lineTo(93,y+NAME_H+38);ctx.lineTo(103,y+NAME_H+38);ctx.closePath();ctx.fillStyle='#FFF';ctx.fill();
+      txt(m.title,120,y+NAME_H+32,15,'#111','left','600');
+      txt(m.sub,120,y+NAME_H+56,12,UA.sys);
+      txt('›',322,y+NAME_H+46,16,'#C0C0C0','right');
+    }
+  }
+  ctx.restore();
+}
+
+/* ---------- photo viewer ---------- */
+function drawViewer(v,t){
+  const im=img(v.img);
+  ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);
+  if(im){
+    const iw=im.naturalWidth,ih=im.naturalHeight;
+    const fitW=Math.min(484,iw),fitH=fitW*ih/iw;
+    const p=ease(clamp((t-v.start)/(v.end-v.start),0,1));
+    const s=1+(v.zoom-1)*p;
+    const cx=W/2,cy=H/2-30;
+    const dw=fitW*s,dh=fitH*s;
+    ctx.drawImage(im,cx-dw/2,cy-dh/2,dw,dh);
+  }
+  txt('‹',20,48,26,'#EDEDED','left','400');
+  txt('微信(1)',52,46,15,'#EDEDED','left','500');
+  txt('···',516,46,20,'#EDEDED','right','700');
+  const idx=v.img==='kitchen'?'1 / 2':'2 / 2';
+  txt(idx,516,930,13,'rgba(237,237,237,.7)','right','500');
+}
+
+/* ---------- grain / glitch ---------- */
+function grain(seed){
+  const r=rng(seed);
+  ctx.save();ctx.globalAlpha=.025;
+  for(let i=0;i<130;i++){ctx.fillStyle=r()>.5?'#000':'#fff';ctx.fillRect(r()*W,r()*H,1+r()*40,1);}
+  ctx.restore();
+}
+function glitch(t,s){
+  if(s<=0)return;
+  const r=rng(Math.floor(t*40)*71+3),n=Math.floor(s*6);
+  for(let i=0;i<n;i++){
+    const y=r()*H,h=2+r()*10,dx=(r()-.5)*30*s;
+    try{ctx.drawImage(c,0,y,W,h,dx,y,W,h);}catch(e){}
+  }
+}
+
+/* ---------- main ---------- */
+function draw(t){
+  t=clamp(t,0,51.98);
+  // chat screen
+  ctx.fillStyle=UA.chatbg;ctx.fillRect(0,0,W,H);
+  statusBar(t);
+  header(t);
+  drawChat(t);
+  inputBar(t);
+  // viewer overlay
+  let inViewer=false;
+  for(const v of VIEWERS){
+    if(t>=v.start&&t<=v.end){drawViewer(v,t);inViewer=true;break;}
+  }
+  grain(Math.floor(t*15)+1);
+  const g=t>=36.8&&t<37.1?.5:t>=42.4&&t<42.7?.4:t>=47.8&&t<48.1?.45:0;
+  glitch(t,g);
+  // ending
+  if(t>49.4){
+    const a=clamp((t-49.4)/.7,0,1);
+    ctx.save();ctx.globalAlpha=a;ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);ctx.restore();
+  }
+  if(t>50.4){
+    const a=clamp((t-50.4)/.4,0,1);
+    ctx.save();ctx.globalAlpha=a;
+    txt('妈妈  最后上线：49 天前',W/2,430,15,UA.sys,'center','500');
+    ctx.restore();
+  }
+  if(t>51.2){
+    const a=clamp((t-51.2)/.4,0,1);
+    ctx.save();ctx.globalAlpha=a;
+    txt('刚才的消息，发自你的手机。',W/2,480,24,'#ffffff','center','700');
+    ctx.restore();
+  }
+}
+window.seek=t=>draw(t);
+
+if(imgNeed>0&&imgLoaded>=imgNeed)window.__ready=true;
+else{
+  const iv=setInterval(()=>{
+    if(imgLoaded>=imgNeed){window.__ready=true;clearInterval(iv);}
+  },80);
+}
+if(!CAPTURE){
+  const t0=performance.now();
+  (function loop(now){draw(((now-t0)/1000)%52);requestAnimationFrame(loop);})(t0);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>ELEV-SYS / 超载</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden}
+  body{display:flex;align-items:center;justify-content:center}
+  canvas{width:540px;height:960px;display:block}
+</style>
+</head>
+<body>
+<canvas id="c" width="540" height="960"></canvas>
+<script>
+const c=document.getElementById('c');
+const ctx=c.getContext('2d',{alpha:false});
+const W=540,H=960;
+const CAPTURE=new URLSearchParams(location.search).has('capture');
+
+const C={
+  bg:'#05080b', panel:'#0a1116', line:'#1b3038', dim:'#4e6a72',
+  text:'#9dc5ce', bright:'#e6fbff', amber:'#e8b45a', red:'#ff5252',
+  green:'#63e0a0', blue:'#6fc9ff'
+};
+
+const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+const seg=(t,a,b)=>clamp((t-a)/(b-a),0,1);
+const blink=(t,p=1)=>(t%p)<p/2;
+function rng(seed){let s=seed>>>0;return ()=>((s=(s*1664525+1013904223)>>>0)/4294967296);}
+
+function box(x,y,w,h,fill,stroke,r=4,lw=1){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);
+  ctx.closePath();
+  if(fill){ctx.fillStyle=fill;ctx.fill();}
+  if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=lw;ctx.stroke();}
+}
+function txt(s,x,y,size=16,color=C.text,align='left',weight='400',font='mono'){
+  ctx.save();
+  const fam=font==='mono'?'"Consolas","Courier New","Microsoft YaHei",monospace':'"Microsoft YaHei","PingFang SC",sans-serif';
+  ctx.font=weight+' '+size+'px '+fam;
+  ctx.fillStyle=color;ctx.textAlign=align;ctx.textBaseline='alphabetic';
+  ctx.fillText(s,x,y);ctx.restore();
+}
+function line(x1,y1,x2,y2,color=C.line,lw=1){
+  ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);
+  ctx.strokeStyle=color;ctx.lineWidth=lw;ctx.stroke();
+}
+function clock(t){
+  const base=22*3600+47*60+3+Math.floor(t);
+  const h=Math.floor(base/3600)%24, m=Math.floor(base/60)%60, s=base%60;
+  return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+}
+function header(t){
+  txt('华景大厦  /  ELEV-SYS 4.1',28,42,14,C.dim,'left','700');
+  txt('电梯运行监控',512,42,13,C.dim,'right');
+  line(28,56,512,56,C.line);
+  txt(clock(t),28,82,15,C.text,'left','700');
+  txt('● 夜间节能',512,82,13,C.amber,'right','700');
+}
+function footer(s){
+  line(28,912,512,912,C.line);
+  txt(s,28,938,12,C.dim);
+  txt('无人值守 / 自动巡检',512,938,11,C.dim,'right');
+}
+function scanlines(seed){
+  ctx.save();ctx.globalAlpha=.15;ctx.fillStyle='#000';
+  for(let y=0;y<H;y+=3)ctx.fillRect(0,y,W,1);
+  ctx.restore();
+  const r=rng(seed);ctx.save();ctx.globalAlpha=.04;
+  for(let i=0;i<80;i++){ctx.fillStyle=r()>.5?'#bff':'#000';ctx.fillRect(r()*W,r()*H,1+r()*60,1);}
+  ctx.restore();
+  const g=ctx.createRadialGradient(W/2,H/2,H*.24,W/2,H/2,H*.8);
+  g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(0,0,0,.7)');
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+}
+function glitch(t,s){
+  if(s<=0)return;
+  const r=rng(Math.floor(t*40)*77+5), n=Math.floor(s*7);
+  for(let i=0;i<n;i++){
+    const y=r()*H,h=2+r()*12,dx=(r()-.5)*34*s;
+    try{ctx.drawImage(c,0,y,W,h,dx,y,W,h);}catch(e){}
+  }
+  ctx.save();ctx.globalAlpha=.08*s;ctx.fillStyle='#7ef';ctx.fillRect(0,0,W,H);ctx.restore();
+}
+
+/* ========== A. 启动自检 0-5 ========== */
+function boot(t){
+  txt('系统自检  /  SYSTEM CHECK',W/2,146,15,C.amber,'center','700');
+  box(28,176,484,286,C.panel,C.line,6);
+  const items=[
+    ['电梯在线 ............ 4 / 4',.35],
+    ['轿厢摄像头 .......... 4 / 4',.95],
+    ['称重传感器 .......... 4 / 4',1.55],
+    ['楼层信号 ............ OK',2.15]
+  ];
+  items.forEach(([s,at],i)=>{
+    if(t>=at){
+      const a=clamp((t-at)/.22,0,1);
+      ctx.save();ctx.globalAlpha=a;
+      txt(s,52,228+i*52,17,i===3?C.amber:C.text);
+      ctx.restore();
+    }
+  });
+  const p=clamp(t/3.4,0,1);
+  txt('初始化  '+Math.floor(p*100)+'%',28,504,14,C.dim);
+  box(28,518,484,9,'#08131a',C.line,2);
+  ctx.fillStyle=C.amber;ctx.fillRect(30,520,480*p,5);
+  if(t>3.8){
+    ctx.save();ctx.globalAlpha=blink(t,.6)?1:.35;
+    txt('系统运行正常',W/2,596,22,C.green,'center','700','sans');
+    ctx.restore();
+    txt('夜间模式已启用 · 无人值守',W/2,626,13,C.dim,'center');
+  }
+}
+
+/* ========== B. 空载停靠 5-13 ========== */
+const stops=[1,2,3,4,5,6,7,8];
+function floorState(t){
+  const local=clamp(t-5,0,8);
+  const idx=Math.min(stops.length-1,Math.floor(local/1.0));
+  const p=local%1;
+  return {fl:stops[idx],idx,p,open:p<.42};
+}
+function elevatorScene(t){
+  const st=floorState(t);
+  const fl=st.fl;
+  // left panel
+  box(28,150,268,300,C.panel,C.line,6);
+  txt('2 号梯  /  ELEV-02',48,184,14,C.dim,'left','700');
+  txt(String(fl).padStart(2,'0'),48,300,86,C.bright,'left','700');
+  txt('F',166,300,24,C.dim,'left','700');
+  txt(st.open?'开门':'关门',48,342,18,st.open?C.green:C.text,'left','700','sans');
+  txt('运行方向',48,382,13,C.dim);
+  txt('上行 ↑',48,408,18,C.text,'left','700','sans');
+  txt('轿厢载重',48,444,13,C.dim);
+  txt('0.0 kg',48,470,18,C.text,'left','700');
+  // right shaft
+  box(316,150,196,300,C.panel,C.line,6);
+  txt('井道 / SHAFT',336,180,12,C.dim);
+  const top=200,bot=430,floors=10;
+  for(let i=0;i<floors;i++){
+    const y=bot-(i/(floors-1))*(bot-top);
+    line(344,y,484,y,'#12262d');
+    txt(String(i+1),336,y+4,10,C.dim,'left');
+  }
+  const carY=bot-((fl-1)/(floors-1))*(bot-top);
+  ctx.fillStyle='#1d3f45';ctx.fillRect(408,carY-13,62,26);
+  ctx.strokeStyle=C.amber;ctx.lineWidth=1.5;ctx.strokeRect(408,carY-13,62,26);
+  if(st.open){ctx.fillStyle='#0a1a20';ctx.fillRect(410,carY-11,58,22);line(439,carY-11,439,carY+11,C.amber,1);}
+  // camera thumb
+  box(28,472,484,220,C.panel,C.line,6);
+  txt('轿厢摄像头  /  CAM-02',48,504,13,C.dim);
+  ctx.fillStyle='#03080a';ctx.fillRect(48,516,444,150);
+  // empty cabin perspective
+  ctx.strokeStyle='#123038';ctx.lineWidth=1;
+  line(48,666,270,566,'#123038');line(492,666,270,566,'#123038');
+  line(120,666,220,566,'#0d252b');line(420,666,320,566,'#0d252b');
+  ctx.fillStyle='#0a1a20';ctx.fillRect(220,566,100,100);
+  line(270,566,270,666,'#123038');
+  txt('画面内人数：0',48,650,13,C.dim);
+  txt(clock(t),492,650,12,C.dim,'right');
+  // log
+  box(28,710,484,178,C.panel,C.line,6);
+  txt('运行日志 / LOG',48,742,13,C.dim);
+  const rows=[
+    [5.0,'1F  开门 · 无人进入'],
+    [6.0,'2F  开门 · 无人进入'],
+    [7.0,'3F  开门 · 无人进入'],
+    [8.0,'4F  开门 · 无人进入'],
+    [9.0,'5F  开门 · 无人进入'],
+    [10.0,'6F  开门 · 无人进入'],
+    [11.0,'7F  开门 · 无人进入'],
+    [12.0,'8F  开门 · 无人进入']
+  ];
+  let shown=rows.filter(r=>t>=r[0]).slice(-3);
+  shown.forEach((r,i)=>txt(r[1],48,776+i*36,15,C.text,'left','400','sans'));
+  if(t>12.4){ctx.save();ctx.globalAlpha=blink(t,.5)?1:.3;txt('空载停靠 8 层 · 未检测到乘客',48,868,14,C.amber,'left','700','sans');ctx.restore();}
+}
+
+/* ========== C. 走廊监控 13-21 ========== */
+function corridorScene(t){
+  txt('公共区域监控  /  CAM-05',28,128,15,C.amber,'left','700');
+  const fx=28,fy=150,fw=484,fh=330;
+  ctx.fillStyle='#020607';ctx.fillRect(fx,fy,fw,fh);
+  const r=rng(Math.floor(t*24)+11);
+  for(let i=0;i<900;i++){
+    const a=.02+r()*.09;
+    ctx.fillStyle=r()>.5?'rgba(160,220,210,'+a+')':'rgba(0,0,0,'+a+')';
+    ctx.fillRect(fx+r()*fw,fy+r()*fh,1+r()*3,1+r()*2);
+  }
+  // corridor
+  ctx.fillStyle='rgba(110,180,180,.05)';ctx.fillRect(fx+110,fy+50,fw-220,fh-100);
+  ctx.strokeStyle='rgba(120,190,175,.11)';ctx.lineWidth=1;
+  line(fx+30,fy+40,fx+150,fy+fh-40,'rgba(120,190,175,.10)');
+  line(fx+fw-30,fy+40,fx+fw-150,fy+fh-40,'rgba(120,190,175,.10)');
+  line(fx+150,fy+fh-40,fx+fw-150,fy+fh-40,'rgba(120,190,175,.10)');
+  for(let i=0;i<5;i++)line(fx+170+i*36,fy+60+i*10,fx+170+i*36,fy+fh-40-i*28,'rgba(120,190,175,.08)');
+  // figure at end
+  const sway=Math.sin(t*2.2)*6;
+  const px=fx+242, py=fy+150;
+  ctx.fillStyle='rgba(1,7,8,.96)';
+  ctx.beginPath();ctx.ellipse(px,py+sway*.2,16,20,0,0,7);ctx.fill();
+  ctx.fillRect(px-15,py+18+sway*.2,30,88);
+  ctx.fillRect(px-27,py+34+sway*.5,10,64);
+  ctx.fillRect(px+17,py+32-sway*.5,10,68);
+  ctx.fillRect(px-14,py+102,11,44);ctx.fillRect(px+4,py+102,11,44);
+  if(t>15.2){
+    ctx.save();ctx.setLineDash([5,4]);ctx.strokeStyle=C.red;ctx.lineWidth=2;
+    ctx.strokeRect(px-42,py-18,84,176);ctx.restore();
+    txt('人形 12%',px-42,py-26,12,C.red,'left','700');
+  }
+  txt('CAM-05  5F 走廊  '+clock(t),fx+12,fy+24,12,C.text,'left','700');
+  txt('REC',fx+fw-12,fy+24,12,C.red,'right','700');
+  // 4 thumbnails
+  txt('同源画面 / 4 路比对',28,508,13,C.dim);
+  const fls=['3F','5F','7F','9F'];
+  fls.forEach((f,i)=>{
+    const x=28+i*124;
+    box(x,522,116,92,C.panel,C.line,4);
+    ctx.fillStyle='#08151b';ctx.fillRect(x+4,526,108,80);
+    ctx.fillStyle='rgba(1,6,7,.95)';
+    ctx.beginPath();ctx.ellipse(x+58,556,7,9,0,0,7);ctx.fill();
+    ctx.fillRect(x+51,564,14,26);
+    txt(f,x+10,548,11,C.dim);
+    if(t>16.5){ctx.strokeStyle='rgba(255,82,82,.6)';ctx.lineWidth=1;ctx.strokeRect(x+4,526,108,80);}
+  });
+  // log
+  box(28,630,484,256,C.panel,C.line,6);
+  txt('事件日志 / EVENT LOG',48,664,13,C.dim);
+  const ev=[
+    [13.4,'5F 走廊检测到人形目标',C.amber],
+    [14.2,'置信度 12% · 低于阈值',C.text],
+    [15.4,'判定：画面噪点 / 非人员',C.text],
+    [17.0,'4 路画面出现相同噪点',C.amber],
+    [18.6,'已切换增强模式',C.dim],
+    [19.6,'增强失败 · 信号正常',C.red]
+  ];
+  ev.forEach((e,i)=>{
+    if(t>e[0]){
+      txt(clock(e[0]),48,700+i*30,12,C.dim);
+      txt(e[1],140,700+i*30,14,e[2],'left','400','sans');
+    }
+  });
+}
+
+/* ========== D. 呼梯记录 21-29 ========== */
+function callScene(t){
+  txt('呼梯记录  /  CALL LOG',28,128,15,C.amber,'left','700');
+  box(28,150,484,330,C.panel,C.line,6);
+  line(48,190,492,190,C.line);
+  txt('时间',48,180,12,C.dim);
+  txt('楼层',190,180,12,C.dim);
+  txt('来源',280,180,12,C.dim);
+  txt('按钮操作',400,180,12,C.dim);
+  const rows=[
+    [21.4,'22:48:31','3F','外部呼梯','无记录'],
+    [22.2,'22:48:36','5F','外部呼梯','无记录'],
+    [23.0,'22:48:41','7F','外部呼梯','无记录'],
+    [23.8,'22:48:46','9F','外部呼梯','无记录'],
+    [24.6,'22:48:51','11F','外部呼梯','无记录'],
+    [25.4,'22:48:56','13F','外部呼梯','无记录']
+  ];
+  rows.forEach((r,i)=>{
+    if(t>r[0]){
+      txt(r[1],48,224+i*40,14,C.text);
+      txt(r[2],190,224+i*40,14,C.amber,'left','700');
+      txt(r[3],280,224+i*40,13,C.dim);
+      txt(r[4],400,224+i*40,13,C.red);
+    }
+  });
+  box(28,500,484,180,C.panel,C.line,6);
+  txt('派梯算法 / DISPATCH',48,534,13,C.dim);
+  txt('策略：夜间就近响应',48,566,14,C.text);
+  txt('空闲电梯：#2  →  分配至 13F',48,598,14,C.amber);
+  if(t>26.4){
+    ctx.save();ctx.globalAlpha=blink(t,.7)?1:.4;
+    txt('正在响应一个没有发生过的呼叫',48,640,15,C.red,'left','700','sans');
+    ctx.restore();
+  }
+  box(28,700,484,186,C.panel,C.line,6);
+  txt('系统判断 / ANALYSIS',48,734,13,C.dim);
+  txt('按钮无操作记录',48,770,15,C.text,'left','400','sans');
+  txt('线路无短接',48,800,15,C.text,'left','400','sans');
+  txt('结论：误报',48,830,17,C.green,'left','700','sans');
+  txt('继续运行',48,862,13,C.dim);
+}
+
+/* ========== E. 重量异常 29-37 ========== */
+function weightAt(t){
+  if(t<29.8)return 0;
+  if(t<30.6)return 0.4;
+  if(t<31.4)return 3.2;
+  if(t<32.2)return 12.8;
+  if(t<33.0)return 31.5;
+  if(t<33.8)return 47.0;
+  if(t<36.6)return 68.4;
+  return 0;
+}
+function weightScene(t){
+  const w=weightAt(t);
+  txt('轿厢称重  /  LOAD CELL',28,128,15,C.amber,'left','700');
+  box(28,150,484,300,C.panel,C.line,6);
+  txt('实时载重',48,188,13,C.dim);
+  txt(w.toFixed(1),48,278,68,w>0?C.bright:C.dim,'left','700');
+  txt('kg',210,278,22,C.dim,'left','700');
+  txt('额定 1000 kg  ·  当前 '+(w/1000*100).toFixed(1)+'%',48,312,13,C.dim);
+  // bar
+  box(48,334,444,10,'#08131a',C.line,2);
+  ctx.fillStyle=w>0?C.amber:'#12262d';ctx.fillRect(50,336,440*clamp(w/100,0,1),6);
+  // graph
+  const gx=48,gy=370,gw=444,gh=54;
+  line(gx,gy+gh,gx+gw,gy+gh,C.line);
+  const pts=[[29,0],[29.8,.4],[30.6,3.2],[31.4,12.8],[32.2,31.5],[33,47],[33.8,68.4],[36.6,68.4],[36.9,0]];
+  ctx.beginPath();let started=false;
+  pts.forEach(([tt,vv])=>{
+    if(tt>t)return;
+    const x=gx+clamp((tt-29)/8,0,1)*gw;
+    const y=gy+gh-clamp(vv/80,0,1)*gh;
+    started?ctx.lineTo(x,y):ctx.moveTo(x,y);started=true;
+  });
+  ctx.strokeStyle=C.amber;ctx.lineWidth=2;ctx.stroke();
+  txt('30s',gx,442,11,C.dim);txt('37s',gx+gw-10,442,11,C.dim);
+  // camera
+  box(28,462,484,220,C.panel,C.line,6);
+  txt('轿厢摄像头  /  CAM-02',48,494,13,C.dim);
+  ctx.fillStyle='#03080a';ctx.fillRect(48,506,444,140);
+  ctx.strokeStyle='#123038';line(48,646,270,556,'#123038');line(492,646,270,556,'#123038');
+  line(120,646,220,556,'#0d252b');line(420,646,320,556,'#0d252b');
+  ctx.fillStyle='#0a1a20';ctx.fillRect(220,556,100,90);
+  txt('画面内人数：0',48,632,13,C.dim);
+  // warning
+  box(28,700,484,186,w>0?'#1b0d0d':'#0a1116',w>0?C.red:C.line,6,1.2);
+  txt('⚠  称重异常  WEIGHT ANOMALY',48,738,15,C.red,'left','700','sans');
+  if(w>0){
+    txt('检测到额外载重  '+w.toFixed(1)+' kg',48,776,17,C.text,'left','400','sans');
+    txt('画面内人数  0',48,808,15,C.text,'left','400','sans');
+    txt('判断：传感器漂移',48,840,16,C.amber,'left','700','sans');
+    txt('建议：校准 / 忽略',48,868,12,C.dim);
+  }else{
+    txt('无额外载重',48,776,16,C.green,'left','400','sans');
+    txt('传感器状态：正常',48,808,14,C.dim);
+  }
+  if(t>36.7){
+    ctx.save();ctx.globalAlpha=blink(t,.4)?1:.5;
+    txt('校准完成 · 载重归零',48,840,16,C.green,'left','700','sans');
+    ctx.restore();
+  }
+}
+
+/* ========== F. 轿厢内部 37-45 ========== */
+function cabinScene(t){
+  txt('轿厢内部  /  CAM-02',28,128,15,C.amber,'left','700');
+  const fx=28,fy=150,fw=484,fh=470;
+  ctx.fillStyle='#020607';ctx.fillRect(fx,fy,fw,fh);
+  const flicker=(Math.floor(t*11)%5===0)||(Math.floor(t*7)%9===0);
+  ctx.save();
+  if(flicker){ctx.globalAlpha=.55;}
+  // walls
+  ctx.fillStyle='#0b171c';ctx.fillRect(fx+30,fy+40,fw-60,fh-90);
+  ctx.strokeStyle='#17323a';ctx.lineWidth=2;ctx.strokeRect(fx+30,fy+40,fw-60,fh-90);
+  ctx.fillStyle='#0e2026';ctx.fillRect(fx+70,fy+70,fw-140,200);
+  ctx.strokeStyle='#1c3b44';ctx.strokeRect(fx+70,fy+70,fw-140,200);
+  txt('镜',fx+fw/2,fy+180,40,'#1e3f48','center','700','sans');
+  // handrail
+  ctx.fillStyle='#1b343b';ctx.fillRect(fx+55,fy+300,fw-110,8);
+  // floor
+  ctx.fillStyle='#0a1519';ctx.fillRect(fx+30,fy+fh-140,fw-60,90);
+  // wet footprints
+  const r=rng(303);
+  for(let i=0;i<8;i++){
+    const x=fx+120+i*32+r()*14, y=fy+fh-120-r()*50;
+    ctx.fillStyle='rgba(120,200,210,'+(0.05+r()*0.05)+')';
+    ctx.beginPath();ctx.ellipse(x,y,7,12,r()*.4,0,7);ctx.fill();
+  }
+  // silhouette in corner on flicker
+  if(t>41.2 && (Math.floor(t*6)%4===0)){
+    ctx.fillStyle='rgba(0,4,5,.9)';
+    ctx.beginPath();ctx.ellipse(fx+fw-120,fy+190,20,24,0,0,7);ctx.fill();
+    ctx.fillRect(fx+fw-138,fy+212,36,150);
+  }
+  ctx.restore();
+  // overlay
+  txt('CAM-02  '+clock(t),fx+12,fy+24,12,C.text,'left','700');
+  txt('REC',fx+fw-12,fy+24,12,C.red,'right','700');
+  if(t>41.6){txt('遮挡 12%  ·  增强已开启',fx+12,fy+fh-18,12,C.amber,'left','700');}
+  // log
+  box(28,650,484,236,C.panel,C.line,6);
+  txt('图像分析 / IMAGE',48,684,13,C.dim);
+  const ev=[
+    [37.4,'检测到镜面反光',C.text],
+    [39.2,'地面湿度异常',C.text],
+    [41.6,'画面遮挡 12%',C.amber],
+    [43.0,'未检测到人员',C.green],
+    [44.2,'压缩噪点增加',C.dim]
+  ];
+  ev.forEach((e,i)=>{
+    if(t>e[0]){
+      txt(clock(e[0]),48,718+i*32,12,C.dim);
+      txt(e[1],140,718+i*32,14,e[2]);
+    }
+  });
+}
+
+/* ========== G. 不存在的楼层 45-53 ========== */
+function b4Scene(t){
+  txt('楼层信号  /  FLOOR SIGNAL',28,128,15,C.amber,'left','700');
+  const idx=Math.min(6,Math.floor(clamp(t-45,0,6.9)));
+  const fls=['3','2','1','B1','B2','B3','B4'];
+  const cur=fls[idx];
+  box(28,150,240,300,C.panel,C.line,6);
+  txt('当前楼层',48,186,13,C.dim);
+  txt(cur,48,300,88,idx>=6?C.red:C.bright,'left','700');
+  txt('F',idx>=6?150:140,300,22,C.dim,'left','700');
+  txt(idx>=6?'楼层不存在':'下行 ↓',48,344,16,idx>=6?C.red:C.text,'left','700','sans');
+  txt(idx>=6?'信号来源：未知':'目标：B3',48,376,13,C.dim);
+  // building section
+  box(292,150,220,300,C.panel,C.line,6);
+  txt('建筑图纸 / B 区',312,180,12,C.dim);
+  const levels=['1F','B1','B2','B3'];
+  levels.forEach((l,i)=>{
+    const y=210+i*50;
+    ctx.strokeStyle='#17323a';ctx.strokeRect(332,y,150,38);
+    txt(l,340,y+24,12,C.dim);
+  });
+  // dashed B4
+  ctx.save();ctx.setLineDash([4,4]);
+  ctx.strokeStyle=idx>=6?C.red:'#243b42';ctx.strokeRect(332,410,150,38);
+  ctx.restore();
+  txt('B4',340,434,12,idx>=6?C.red:C.dim);
+  if(idx>=6){ctx.save();ctx.globalAlpha=blink(t,.4)?1:.35;txt('图纸无此层',412,434,11,C.red,'right','700','sans');ctx.restore();}
+  // door feed
+  box(28,474,484,220,C.panel,C.line,6);
+  txt('门机状态 / DOOR',48,506,13,C.dim);
+  ctx.fillStyle='#010506';ctx.fillRect(48,518,444,140);
+  if(t>51.0){
+    ctx.fillStyle='#000';ctx.fillRect(210,518,120,140);
+    ctx.strokeStyle='#1a3038';ctx.strokeRect(210,518,120,140);
+    txt('门已开启',48,650,13,C.red);
+  }else{
+    line(270,518,270,658,'#1a3038',2);
+    txt('门已关闭',48,650,13,C.text);
+  }
+  // log
+  box(28,712,484,174,C.panel,C.line,6);
+  txt('系统事件 / EVENT',48,746,13,C.dim);
+  const ev=[
+    [46.0,'楼层信号跳变',C.amber],
+    [48.0,'超出最低楼层范围',C.amber],
+    [50.0,'收到开门指令',C.text],
+    [51.2,'当前楼层：B4',C.red],
+    [52.0,'建筑图纸：地下 3 层',C.red]
+  ];
+  ev.forEach((e,i)=>{
+    if(t>e[0]){
+      txt(clock(e[0]),48,780+i*24,12,C.dim);
+      txt(e[1],140,780+i*24,13,e[2]);
+    }
+  });
+}
+
+/* ========== H. 超载 53-60 ========== */
+function overloadScene(t){
+  const drop=t<56.4?82: t<57.0?41: t<57.6?0:0;
+  ctx.save();ctx.globalAlpha=clamp((t-53)/.25,0,1);
+  txt('轿厢称重  /  LOAD',28,128,15,C.amber,'left','700');
+  box(28,150,484,220,'#1b0d0d',C.red,6,1.4);
+  txt('⚠  超载  /  OVERLOAD',48,192,17,C.red,'left','700','sans');
+  txt(drop.toFixed(1),48,300,82,C.bright,'left','700');
+  txt('kg',214,300,24,C.dim,'left','700');
+  txt('额定载重 1000 kg',48,338,13,C.dim);
+  txt('当前人数：1',48,364,13,C.dim);
+  // announcement
+  box(28,394,484,150,C.panel,C.line,6);
+  txt('语音播报 / PA',48,426,13,C.dim);
+  ctx.save();ctx.globalAlpha=blink(t,.7)?1:.55;
+  txt('超载，请下一位乘客下车。',48,478,22,C.amber,'left','700','sans');
+  ctx.restore();
+  txt('等待下客...',48,514,14,C.dim);
+  // door + load timeline
+  box(28,566,484,320,C.panel,C.line,6);
+  txt('门机 / 载重变化',48,600,13,C.dim);
+  const states=[[53,'门关闭 · 82.0 kg'],[56.4,'门关闭 · 41.0 kg'],[57.0,'门关闭 · 0.0 kg'],[57.6,'开门指令已取消']];
+  states.forEach((s,i)=>{if(t>=s[0])txt(s[1],48,638+i*38,15,i===3?C.green:C.text,'left','400','sans');});
+  // weight bars
+  const bw=380, bh=12;
+  box(48,790,bw,bh,'#08131a',C.line,2);
+  ctx.fillStyle=C.red;ctx.fillRect(50,792,bw*clamp(drop/100,0,1),8);
+  txt('0',48,828,11,C.dim);txt('100 kg',428,828,11,C.dim);
+  txt('超载阈值',48,860,12,C.red);
+  ctx.restore();
+  // black ending
+  if(t>57.9){
+    const a=clamp((t-57.9)/.4,0,1)*clamp((60-t)/.15,0,1);
+    ctx.save();ctx.globalAlpha=a;ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);
+    txt('22:53:41  监控结束',W/2,400,13,C.dim,'center','700');
+    txt('当时，电梯里只有一个人。',W/2,470,25,'#ffffff','center','700','sans');
+    if(t>59.0)txt('系统记录：超载 82.0 kg',W/2,512,14,C.amber,'center','700');
+    ctx.restore();
+  }
+}
+
+/* ========== main ========== */
+function draw(t){
+  t=clamp(t,0,59.98);
+  ctx.fillStyle=C.bg;ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle='#0d2028';ctx.strokeRect(12,12,W-24,H-24);
+  header(t);
+  if(t<5)boot(t);
+  else if(t<13)elevatorScene(t);
+  else if(t<21)corridorScene(t);
+  else if(t<29)callScene(t);
+  else if(t<37)weightScene(t);
+  else if(t<45)cabinScene(t);
+  else if(t<53)b4Scene(t);
+  else overloadScene(t);
+  if(t<57.9)footer('2 号梯 / 夜间巡检 · 请勿遮挡摄像头');
+  scanlines(Math.floor(t*15)+1);
+  const g=t<5?0:t<13?.10:t<21?.35:t<29?.18:t<37?.12:t<45?.30:t<53?.55:t<58?.35:0;
+  glitch(t,g*(blink(t,.41)?1:.15));
+}
+window.seek=t=>draw(t);
+window.__ready=true;
+if(!CAPTURE){
+  const t0=performance.now();
+  (function loop(now){draw(((now-t0)/1000)%60);requestAnimationFrame(loop);})(t0);
+}
+</script>
+</body>
+</html>
