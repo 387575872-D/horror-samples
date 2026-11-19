@@ -18,6 +18,20 @@
 - 一键同步：`bash sync_github.sh "提交说明"`。
 - `.gitignore` 已排除 `*/frames/`、`*/edge-profile*/`、`*.wav`、`*/photos/*.png`；成片 mp4 和压缩后的 jpg 会入库。
 
+## 协作仓库的约定（Bao 端定的，2026-11-19 已全部对齐）
+- **交接文档放仓库根目录，不放 `docs/`**（`交接-Bao端到LS端-*.md`）。我这边写 `交接-LS端到Bao端-*.md`，同样放根目录。
+- **成片一律 A/B 双份**：原片 hash 不许改，混音重制版加 `_sfx` 后缀，两份都入库。五个样片现已俱全。
+- **过程产物不入库**：`other-films/*/audio.wav`、`audio_sfx.wav`、`frames/`、`edge-profile*/`、
+  `check_* / final_* / zoom_*.png` 全走 `.gitignore`。只留成片、`contact_sheet.png`、源码。
+- 素材统一进 `assets/` 子目录（`bg` `portraits` `cards` `icons` `overlays` `sfx` `avatars` `frames`）
+  并在 `assets/manifest.json` 登记；**`source`/`license` 字段一个字都不能改**（Mixkit 许可已核实）。
+- 混音 profile 名：`python_ep01` `html_ep1..ep4` `elevator` `utility` `wechat` `dispatch` `router`。
+  响度基准：mean ≈ −32dB、max ≈ −9~−11dB。
+- **⚠️ 血的教训**：发布脚本曾用本地版本静默覆盖 Bao 在 `b83b2cd` 改好的 `audio.py`/`make_video.py`
+  （`--sfx` 支持丢失、绝对路径复活）。已恢复，且脚本现在「仓库版本与本地不同就保留仓库版本并打印 `[keep]`」，
+  要覆盖必须显式 `--force`。
+- `tools/mix_sfx.py` 的 `--ffmpeg` 已加回退：PATH 没有 ffmpeg 时自动用 imageio-ffmpeg。
+
 
 ## 视频样片制作（dispatch_horror）
 - 目录：`dispatch_horror/`。成片 `dispatch_horror_20s.mp4`；可编辑源 `render.html`（改文案/配色/时间轴）、`audio.py`（改音效）、`capture.mjs` + `make_video.py`（重渲染导出）。

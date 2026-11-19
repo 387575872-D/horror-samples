@@ -20,3 +20,6 @@ douyin_page.html
 
 # 协作仓库的本地克隆（独立 git 仓库，走 publish_video.py 发布）
 _repo_phonechat/
+
+# ImageGen 原始出图（带 AI 水印，只作 make_assets.py 的输入，成品在协作仓库 assets/）
+gen_assets/
