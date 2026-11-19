@@ -1,5 +1,8 @@
 import math, random, wave, struct
 
+from pathlib import Path
+OUT = Path(__file__).resolve().parent / 'audio.wav'
+
 SR = 44100
 DUR = 45.0
 N = int(SR * DUR)
@@ -124,7 +127,7 @@ for k, v in enumerate(buf):
     v = math.tanh(v * 1.7) * max(0, fade)
     out.append(int(max(-1, min(1, v)) * 24000))
 
-with wave.open('C:/Users/39288/WorkBuddy/2026-11-17-19-03-56/router_horror/audio.wav', 'wb') as w:
+with wave.open(str(OUT), 'wb') as w:
     w.setnchannels(1); w.setsampwidth(2); w.setframerate(SR)
     w.writeframes(b''.join(struct.pack('<h', x) for x in out))
 print('audio.wav written')
