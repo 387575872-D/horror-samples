@@ -32,6 +32,15 @@
   要覆盖必须显式 `--force`。
 - `tools/mix_sfx.py` 的 `--ffmpeg` 已加回退：PATH 没有 ffmpeg 时自动用 imageio-ffmpeg。
 
+## 素材生成（`assets/`）
+- 图像素材链路：**ImageGen 出原图（右下角带「AI生成 WORKBUD>」水印）→ `tools/make_assets.py` 裁 80px 水印
+  → 按清单规格 cover 裁切/缩放 → 落 `assets/` → 在 `assets/manifest.json` 的 `images` 数组登记**。
+  AI 原图带水印不入库（放工作区 `gen_assets/`，已 gitignore），只入库成品。
+- 程序化素材（飘雪 / 颗粒 / 图标）用固定随机种子，重跑同一张，比 AI 生成更干净可控。
+- **本机装 Pillow 要走腾讯云镜像**（`https://mirrors.cloud.tencent.com/pypi/simple`）：
+  阿里云镜像每次都断在 IncompleteRead 同一字节，清华源直接取不到包。
+- 做不出来的：真实感音效。程序化合成和 `render_story.py` 里 numpy 那套同档次，必须靠真实 CC0 素材。
+
 
 ## 视频样片制作（dispatch_horror）
 - 目录：`dispatch_horror/`。成片 `dispatch_horror_20s.mp4`；可编辑源 `render.html`（改文案/配色/时间轴）、`audio.py`（改音效）、`capture.mjs` + `make_video.py`（重渲染导出）。
