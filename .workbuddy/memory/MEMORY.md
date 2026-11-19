@@ -1,8 +1,21 @@
 # 项目长期笔记
 
-## GitHub 同步
-- 远程：`origin https://github.com/387575872-D/horror-samples.git`，主分支 `LS_main`（本机要求分支名以 `LS_` 开头）。
-- 一键同步：`bash sync_github.sh "提交说明"`。默认每次任务收尾执行一次。
+## GitHub 同步（两个仓库，用途不同）
+
+### 1) 协作仓库 = 成片默认去处（2026-11-19 用户要求「以后视频传到这」）
+- `https://github.com/Bao114514/phone-chat-horror`（branch `main`，本地克隆在 `_repo_phonechat/`）。
+- 发布命令：`python publish_video.py <项目目录> "<片名>" --merge`
+  → 复制到 `other-films/<slug>/`、建 `LS_<日期>_<slug>` 分支、推送、开 PR、合并。
+  脚本幂等：内容没变会打印 `[skip]` 直接退出，不会造空 PR。
+- 入库文件集：`render.html` `audio.py` `audio.wav` `photos.js` `prep_photos.py` `make_video.py`
+  `contact_sheet.png` `*.mp4` `photos/*.jpg`。照片的原始 `.png`（带 AI 水印）不入库。
+- 仓库自身 `.gitignore` 忽略了 `*.wav`，所以脚本用 `git add -f` 强制加入。
+- 该仓库 `other-films/` 下已有 5 个样片：dispatch / elevator / utility / wechat / router，均含 mp4+总览图。
+- 注意：仓库里部分样片还多一个 `*_sfx.mp4`（Bao 端做的音效版），我这边只产出主成片。
+
+### 2) 个人镜像仓库 = 本地备份
+- `origin https://github.com/387575872-D/horror-samples.git`，主分支 `LS_main`（本机 hook 要求分支名 `LS_` 开头）。
+- 一键同步：`bash sync_github.sh "提交说明"`。
 - `.gitignore` 已排除 `*/frames/`、`*/edge-profile*/`、`*.wav`、`*/photos/*.png`；成片 mp4 和压缩后的 jpg 会入库。
 
 
