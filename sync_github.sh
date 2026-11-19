@@ -18,5 +18,6 @@ fi
 
 MSG="${1:-自动同步：$(date '+%Y-%m-%d %H:%M')}"
 git commit -q -m "$MSG"
-git -c http.schannelCheckRevoke=false push origin "$BRANCH"
+# 本机 git 走 OpenSSL 取不到根证书，必须强制 schannel 且关吊销检查
+git -c http.sslBackend=schannel -c http.schannelCheckRevoke=false push origin "$BRANCH"
 echo "已推送 $BRANCH：$MSG"

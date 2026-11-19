@@ -17,3 +17,6 @@ __pycache__/
 
 # 抓取残留
 douyin_page.html
+
+# 协作仓库的本地克隆（独立 git 仓库，走 publish_video.py 发布）
+_repo_phonechat/
